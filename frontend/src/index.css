@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@theme {
+  /* These map Tailwind classes to CSS variables. 
+     For example: bg-bg-primary maps to var(--bg-primary) */
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-violet: var(--accent-violet);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-card-bg: var(--card-bg);
+  --color-navbar-bg: var(--navbar-bg);
+
+  --font-heading: 'Exo 2', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+
+:root, [data-theme="dark"] {
+  --bg-primary: #07090f;
+  --bg-surface: #0f1320;
+  --bg-elevated: #161b2e;
+  --text-primary: #f0f9ff;
+  --text-secondary: #94a3b8;
+  --text-muted: #4a5568;
+  --border-subtle: rgba(255,255,255,0.07);
+  --accent-cyan: #00d4ff;
+  --accent-violet: #7c3aed;
+  --card-bg: #161b2e;
+  --navbar-bg: rgba(7,9,15,0.85);
+}
+
+[data-theme="light"] {
+  --bg-primary: #f5f7ff;
+  --bg-surface: #ffffff;
+  --bg-elevated: #eef1fa;
+  --text-primary: #0a0f2e;
+  --text-secondary: #4a5068;
+  --text-muted: #94a3b8;
+  --border-subtle: rgba(0,0,0,0.08);
+  --accent-cyan: #0099bb;
+  --accent-violet: #6d28d9;
+  --card-bg: #ffffff;
+  --navbar-bg: rgba(245,247,255,0.9);
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3, h4, h5, h6, .logo {
+    font-family: var(--font-heading);
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px; /* Sharp minimal radius */
+  }
+
+  /* Frosted Glass Navbar */
+  .frosted-navbar {
+    background: var(--navbar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-subtle);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .neon-glow {
+    box-shadow: 0 0 20px var(--border-active);
+  }
+
+  /* The Book Stack CSS */
+  .book-stack {
+    transform: perspective(1000px) rotateX(2deg);
+    transform-origin: center top;
+  }
+  
+  .book-slab {
+    width: 100%;
+    padding: 22px 48px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s ease, filter 0.2s ease;
+    box-shadow: -6px 0 18px rgba(0,0,0,0.15);
+    border-radius: 2px;
+  }
+  
+  /* Paper Noise Texture */
+  .book-slab::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.4;
+  }
+  
+  .book-slab:hover {
+    transform: translateY(-4px) translateX(4px);
+    filter: brightness(1.12);
+  }
+  
+  .book-slab .title {
+    font-family: var(--font-heading);
+    font-size: 15px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.88);
+    letter-spacing: 0.04em;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}

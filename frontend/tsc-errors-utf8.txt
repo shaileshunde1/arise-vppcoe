@@ -1,0 +1,5 @@
+﻿src/pages/Leaderboard.tsx(2,1): error TS6192: All imports in import declaration are unused.
+src/pages/Leaderboard.tsx(84,26): error TS2322: Type '(el: HTMLTableRowElement | null) => HTMLTableRowElement | null' is not assignable to type 'Ref<HTMLTableRowElement> | undefined'.
+  Type '(el: HTMLTableRowElement | null) => HTMLTableRowElement | null' is not assignable to type '(instance: HTMLTableRowElement | null) => void | (() => VoidOrUndefinedOnly)'.
+    Type 'HTMLTableRowElement | null' is not assignable to type 'void | (() => VoidOrUndefinedOnly)'.
+      Type 'null' is not assignable to type 'void | (() => VoidOrUndefinedOnly)'.

@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.next/
+
+# Env files (CRITICAL)
+.env
+.env.*
+*.local
+
+# Python (CRITICAL for your project)
+venv/
+__pycache__/
+*.pyc
+
+# Build / cache
+.cache/
+coverage/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

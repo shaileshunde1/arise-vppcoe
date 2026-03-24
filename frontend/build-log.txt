@@ -1,0 +1,25 @@
+﻿src/components/apparatus/AcidBaseTitration.tsx(27,9): error TS6133: 'liquidLevelRef' is declared but its value is never read.
+src/components/apparatus/AcidBaseTitration.tsx(28,9): error TS6133: 'flaskLiquidRef' is declared but its value is never read.
+src/components/apparatus/AcidBaseTitration.tsx(59,19): error TS2503: Cannot find namespace 'NodeJS'.
+src/components/apparatus/ElectrolysisWater.tsx(13,9): error TS6133: 'duration' is declared but its value is never read.
+src/components/apparatus/ElectrolysisWater.tsx(30,9): error TS6133: 'electronDotsRef' is declared but its value is never read.
+src/components/apparatus/ElectrolysisWater.tsx(33,19): error TS2503: Cannot find namespace 'NodeJS'.
+src/components/apparatus/LeChatelier.tsx(110,88): error TS2322: Type 'RefObject<SVGGElement | null>' is not assignable to type 'Ref<SVGSVGElement> | undefined'.
+  Type 'RefObject<SVGGElement | null>' is not assignable to type 'RefObject<SVGSVGElement | null>'.
+    Type 'SVGGElement | null' is not assignable to type 'SVGSVGElement | null'.
+      Type 'SVGGElement' is missing the following properties from type 'SVGSVGElement': currentScale, currentTranslate, height, width, and 47 more.
+src/components/apparatus/MagneticField.tsx(24,9): error TS6133: 'magnetLength' is declared but its value is never read.
+src/components/apparatus/PaperChromatography.tsx(1,29): error TS6133: 'useState' is declared but its value is never read.
+src/components/apparatus/PrismRefraction.tsx(1,29): error TS6133: 'useState' is declared but its value is never read.
+src/components/apparatus/PrismRefraction.tsx(61,9): error TS6133: 'ray1_angle' is declared but its value is never read.
+src/components/apparatus/PrismRefraction.tsx(98,11): error TS6133: 'p3_x' is declared but its value is never read.
+src/components/apparatus/PrismRefraction.tsx(99,11): error TS6133: 'p3_y' is declared but its value is never read.
+src/pages/LabSimulator.tsx(189,25): error TS2322: Type '{ varState: Record<string, string | number>; setVarState: Dispatch<SetStateAction<Record<string, string | number>>>; addObservation: (data: any) => void; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'varState' does not exist on type 'IntrinsicAttributes'.
+src/pages/LabSimulator.tsx(283,29): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: PlotParams): Plot', gave the following error.
+    Type '"line" | "bar" | "scatter"' is not assignable to type 'PlotType | undefined'.
+      Type '"line"' is not assignable to type 'PlotType | undefined'.
+  Overload 2 of 2, '(props: PlotParams, context: any): Plot', gave the following error.
+    Type '"line" | "bar" | "scatter"' is not assignable to type 'PlotType | undefined'.
+      Type '"line"' is not assignable to type 'PlotType | undefined'.

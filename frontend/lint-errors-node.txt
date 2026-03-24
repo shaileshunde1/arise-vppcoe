@@ -1,0 +1,69 @@
+D:\projects\Arise\frontend\src\components\ParticleBackground.tsx
+  11:40 Unexpected any. Specify a different type. (@typescript-eslint/no-explicit-any)
+
+D:\projects\Arise\frontend\src\contexts\ThemeContext.tsx
+  34:17 Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components. (react-refresh/only-export-components)
+
+D:\projects\Arise\frontend\src\pages\DiagnosticQuiz.tsx
+  46:7 Error: Cannot access variable before it is declared
+
+`handleNext` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+D:\projects\Arise\frontend\src\pages\DiagnosticQuiz.tsx:46:7
+  44 |     if (isFinished) return;
+  45 |     if (timeLeft <= 0) {
+> 46 |       handleNext(-1); // Automatically submit empty answer if time runs out
+     |       ^^^^^^^^^^ `handleNext` accessed before it is declared
+  47 |       return;
+  48 |     }
+  49 |     const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+
+D:\projects\Arise\frontend\src\pages\DiagnosticQuiz.tsx:72:3
+  70 |   }, [isFinished]);
+  71 |
+> 72 |   const handleNext = (optIdx: number) => {
+     |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 73 |     const newAnswers = [...answers, optIdx];
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 74 |     setAnswers(newAnswers);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 75 |     if (currentIdx < questions.length - 1) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 76 |       setCurrentIdx(currentIdx + 1);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 77 |       setTimeLeft(30);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 78 |     } else {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 79 |       setIsFinished(true);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 80 |     }
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 81 |   };
+     | ^^^^^ `handleNext` is declared here
+  82 |
+  83 |   if (isFinished) {
+  84 |     // Generate random radar data for mockup (react-hooks/immutability)
+  51:6 React Hook useEffect has a missing dependency: 'handleNext'. Either include it or remove the dependency array. (react-hooks/exhaustive-deps)
+  103:59 Unexpected any. Specify a different type. (@typescript-eslint/no-explicit-any)
+
+D:\projects\Arise\frontend\src\pages\LabSimulator.tsx
+  27:5 Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+D:\projects\Arise\frontend\src\pages\LabSimulator.tsx:27:5
+  25 |        return;
+  26 |     }
+> 27 |     setExperiment(exp);
+     |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  28 |     
+  29 |     // 2. Initialize default variables
+  30 |     const initialVars: Record<string, number> = {}; (react-hooks/set-state-in-effect)
+
+D:\projects\Arise\frontend\src\pages\TeacherDashboard.tsx
+  107:42 Unexpected any. Specify a different type. (@typescript-eslint/no-explicit-any)

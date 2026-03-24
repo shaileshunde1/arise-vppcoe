@@ -1,0 +1,340 @@
+export interface ExperimentVariable {
+  id: string;
+  name: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  defaultValue: number | string;
+  unit: string;
+  options?: { value: string; label: string }[];
+}
+
+export interface Experiment {
+  id: string;
+  title: string;
+  subject: 'physics' | 'chemistry';
+  ncert: string;
+  aim: string;
+  theory: string;
+  apparatus: string[];
+  safetyNotes: string[];
+  procedure: string[];
+  variables: ExperimentVariable[];
+  chartType: 'scatter' | 'line' | 'bar';
+  chartLabel: { title: string; x: string; y: string };
+  scoring: { completion: number; accuracy: number; time: number };
+}
+
+export const experiments: Experiment[] = [
+  {
+    id: 'simple-pendulum',
+    title: 'Simple Pendulum',
+    subject: 'physics',
+    ncert: 'Class 11 — Chapter 14',
+    aim: 'To find the effective length of a simple pendulum for a given time period and verify the relation T = 2π√(L/g).',
+    theory: 'A simple pendulum consists of a heavy bob suspended by a string. For small angles, it exhibits Simple Harmonic Motion. The time period T = 2π√(L/g), where L is the effective length and g is acceleration due to gravity.',
+    apparatus: ['Retort stand', 'Bob (50g)', 'String (150cm)', 'Stopwatch', 'Protractor', 'Metre scale'],
+    safetyNotes: ['Keep angle below 15° for SHM approximation', 'Ensure string is firmly clamped', 'Do not let the bob swing sideways'],
+    procedure: [
+      'Set up the retort stand on a stable surface.',
+      'Attach the string firmly to the clamp and tie the bob at the other end.',
+      'Measure the effective length L from pivot to centre of bob.',
+      'Displace the bob to the desired angle (≤15°) and release.',
+      'Start the stopwatch and count 10 complete oscillations.',
+      'Record the time for 10 oscillations and calculate T.',
+      'Repeat for at least 3 different string lengths.',
+    ],
+    variables: [
+      { id: 'length', name: 'String Length', min: 10, max: 150, step: 5, defaultValue: 50, unit: 'cm' },
+      { id: 'mass', name: 'Bob Mass', min: 10, max: 200, step: 10, defaultValue: 50, unit: 'g' },
+      { id: 'angle', name: 'Release Angle', min: 5, max: 15, step: 1, defaultValue: 10, unit: '°' },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'L vs T² Graph', x: 'Length L (cm)', y: 'T² (s²)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'ohms-law',
+    title: "Ohm's Law",
+    subject: 'physics',
+    ncert: 'Class 10 — Chapter 12',
+    aim: 'To verify Ohm\'s Law and determine the resistance of a given resistor by plotting a V-I graph.',
+    theory: 'Ohm\'s Law states that the current through a conductor is directly proportional to the voltage across it, provided temperature remains constant. V = IR, where R is resistance in Ohms.',
+    apparatus: ['Resistor (10Ω)', 'Ammeter', 'Voltmeter', 'Battery (6V)', 'Rheostat', 'Connecting wires', 'Switch'],
+    safetyNotes: ['Never short-circuit the battery', 'Connect ammeter in series only', 'Connect voltmeter in parallel only'],
+    procedure: [
+      'Connect the resistor, ammeter (series), and voltmeter (parallel) as per circuit diagram.',
+      'Set the rheostat to maximum resistance.',
+      'Close the switch and note the initial voltage and current.',
+      'Gradually decrease rheostat resistance and record V and I at each step.',
+      'Record at least 5 readings.',
+      'Plot V on X-axis and I on Y-axis.',
+      'Calculate resistance R = slope of V-I graph.',
+    ],
+    variables: [
+      { id: 'voltage', name: 'Voltage', min: 0.5, max: 6, step: 0.5, defaultValue: 1, unit: 'V' },
+      { id: 'resistance', name: 'Resistance', min: 5, max: 50, step: 5, defaultValue: 10, unit: 'Ω' },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'V-I Characteristic', x: 'Voltage V (V)', y: 'Current I (A)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'projectile-motion',
+    title: 'Projectile Motion',
+    subject: 'physics',
+    ncert: 'Class 11 — Chapter 4',
+    aim: 'To study the trajectory of a projectile and verify that horizontal and vertical motions are independent.',
+    theory: 'A projectile is an object launched into space with only gravity acting on it. The horizontal velocity remains constant while vertical velocity changes due to gravity. Range R = u²sin(2θ)/g.',
+    apparatus: ['Projectile launcher', 'Carbon paper', 'Plumb bob', 'Metre scale', 'Protractor'],
+    safetyNotes: ['Never aim the launcher at people', 'Ensure landing area is clear', 'Keep launch angle below 80°'],
+    procedure: [
+      'Set up the launcher at the edge of the table.',
+      'Set the launch angle using the protractor.',
+      'Launch the projectile and mark the landing point.',
+      'Measure the horizontal range R.',
+      'Repeat for angles: 30°, 45°, 60°.',
+      'Record range for each angle.',
+      'Verify maximum range occurs at 45°.',
+    ],
+    variables: [
+      { id: 'angle', name: 'Launch Angle', min: 15, max: 75, step: 5, defaultValue: 45, unit: '°' },
+      { id: 'velocity', name: 'Initial Velocity', min: 5, max: 30, step: 1, defaultValue: 15, unit: 'm/s' },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'Angle vs Range', x: 'Angle (°)', y: 'Range (m)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'prism-refraction',
+    title: 'Refraction Through Prism',
+    subject: 'physics',
+    ncert: 'Class 12 — Chapter 9',
+    aim: 'To find the angle of minimum deviation for a given prism and hence find the refractive index.',
+    theory: 'When light passes through a prism, it refracts at both surfaces. The refractive index n = sin((A+Dm)/2) / sin(A/2), where A is prism angle and Dm is minimum deviation.',
+    apparatus: ['Glass prism', 'Drawing board', 'White paper', 'Pins', 'Protractor', 'Ruler'],
+    safetyNotes: ['Handle glass prism carefully', 'Do not touch prism surfaces', 'Keep light source away from flammables'],
+    procedure: [
+      'Place the prism on white paper and trace its outline.',
+      'Draw a normal to one face and mark the incident ray at angle i.',
+      'Fix pins along the incident ray.',
+      'Observe the emergent ray and fix pins along it.',
+      'Remove the prism and draw the emergent ray.',
+      'Measure the angle of deviation d.',
+      'Repeat for different angles of incidence.',
+    ],
+    variables: [
+      { id: 'angle', name: 'Incident Angle', min: 30, max: 70, step: 5, defaultValue: 45, unit: '°' },
+      { id: 'prismAngle', name: 'Prism Angle', min: 30, max: 75, step: 5, defaultValue: 60, unit: '°' },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'i vs d Curve', x: 'Angle of Incidence (°)', y: 'Angle of Deviation (°)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'magnetic-field',
+    title: 'Magnetic Field of a Bar Magnet',
+    subject: 'physics',
+    ncert: 'Class 12 — Chapter 5',
+    aim: 'To plot the magnetic field lines around a bar magnet and locate the neutral points.',
+    theory: 'A bar magnet produces a magnetic field in the surrounding space. Field lines emerge from North and enter South pole. The field strength B = (μ₀/4π) × (2M/d³) along the axis.',
+    apparatus: ['Bar magnet', 'Compass needle', 'White paper', 'Drawing board', 'Ruler'],
+    safetyNotes: ['Keep magnet away from electronic devices', 'Do not drop the magnet', 'Keep away from other magnets'],
+    procedure: [
+      'Place the bar magnet at the centre of the paper.',
+      'Place the compass at one pole of the magnet.',
+      'Mark the direction the compass points.',
+      'Move compass to new position following the field lines.',
+      'Connect the dots to form field lines.',
+      'Locate the neutral points where compass spins freely.',
+      'Repeat to trace at least 5 complete field lines.',
+    ],
+    variables: [
+      { id: 'distance', name: 'Distance from Magnet', min: 2, max: 20, step: 1, defaultValue: 5, unit: 'cm' },
+      { id: 'angle', name: 'Angular Position', min: 0, max: 360, step: 15, defaultValue: 0, unit: '°' },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'Distance vs Field Strength', x: 'Distance (cm)', y: 'Field B (mT)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'acid-base-titration',
+    title: 'Acid-Base Titration',
+    subject: 'chemistry',
+    ncert: 'Class 11 — Chapter 7',
+    aim: 'To determine the concentration of a given HCl solution by titrating it against standard NaOH solution.',
+    theory: 'Titration is a quantitative analytical technique. At the equivalence point, moles of acid = moles of base. Using phenolphthalein indicator, endpoint is marked by colour change from colourless to pink.',
+    apparatus: ['Burette (50mL)', 'Pipette (25mL)', 'Conical flask', 'Burette stand', 'Phenolphthalein indicator', '0.1M NaOH', 'HCl solution'],
+    safetyNotes: ['Wear gloves and goggles', 'Handle acids carefully', 'Neutralize spills immediately with water'],
+    procedure: [
+      'Rinse and fill the burette with 0.1M NaOH solution.',
+      'Pipette 25mL of HCl solution into a clean conical flask.',
+      'Add 2-3 drops of phenolphthalein indicator.',
+      'Record the initial burette reading.',
+      'Add NaOH dropwise while swirling the flask.',
+      'Stop when a permanent pink colour persists for 30 seconds.',
+      'Record the final burette reading and calculate volume used.',
+    ],
+    variables: [
+      { id: 'concentration', name: 'NaOH Conc.', min: 0.05, max: 0.5, step: 0.05, defaultValue: 0.1, unit: 'M' },
+      { id: 'volume', name: 'HCl Volume', min: 10, max: 50, step: 5, defaultValue: 25, unit: 'mL' },
+    ],
+    chartType: 'line',
+    chartLabel: { title: 'Titration Curve', x: 'Volume NaOH (mL)', y: 'pH' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'electrolysis-water',
+    title: 'Electrolysis of Water',
+    subject: 'chemistry',
+    ncert: 'Class 10 — Chapter 1',
+    aim: 'To demonstrate electrolysis of water and verify that water is composed of hydrogen and oxygen in 2:1 ratio by volume.',
+    theory: 'When electric current is passed through acidified water, it decomposes into hydrogen and oxygen. At cathode: 2H⁺ + 2e⁻ → H₂. At anode: 2H₂O → O₂ + 4H⁺ + 4e⁻.',
+    apparatus: ['Hoffmann voltameter', 'Battery (6V)', 'Dilute H₂SO₄', 'Carbon electrodes', 'Connecting wires'],
+    safetyNotes: ['Hydrogen is flammable — no open flames', 'Handle sulphuric acid with care', 'Ensure good ventilation'],
+    procedure: [
+      'Fill the Hoffmann voltameter with dilute H₂SO₄ solution.',
+      'Connect the electrodes to the battery.',
+      'Close the stopcocks and switch on the current.',
+      'Observe gas collection at both electrodes.',
+      'Record the volume of gas collected every 2 minutes.',
+      'Verify the 2:1 ratio of H₂ to O₂ by volume.',
+      'Test gases with a glowing splint (O₂) and burning splint (H₂).',
+    ],
+    variables: [
+      { id: 'voltage', name: 'Applied Voltage', min: 3, max: 12, step: 1, defaultValue: 6, unit: 'V' },
+      { id: 'concentration', name: 'H₂SO₄ Conc.', min: 0.1, max: 1.0, step: 0.1, defaultValue: 0.5, unit: 'M' },
+    ],
+    chartType: 'line',
+    chartLabel: { title: 'Gas Volume vs Time', x: 'Time (min)', y: 'Volume (mL)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'flame-test',
+    title: 'Flame Test',
+    subject: 'chemistry',
+    ncert: 'Class 11 — Chapter 10',
+    aim: 'To identify metal ions in unknown salts by observing the characteristic colours produced in a flame test.',
+    theory: 'Metal ions produce characteristic flame colours when heated. Electrons absorb energy and jump to higher energy levels, then emit light of specific wavelengths as they return to ground state.',
+    apparatus: ['Nichrome wire loop', 'Bunsen burner', 'Concentrated HCl', 'Salt samples', 'Watch glasses'],
+    safetyNotes: ['Tie back hair near flame', 'Use tongs to hold wire', 'Concentrated HCl is corrosive — handle carefully'],
+    procedure: [
+      'Clean the nichrome wire by dipping in HCl and heating until no colour appears.',
+      'Dip the clean wire in the first salt sample.',
+      'Hold the wire in the hottest part of the flame.',
+      'Observe and record the flame colour.',
+      'Clean the wire thoroughly before testing the next sample.',
+      'Repeat for all provided salt samples.',
+      'Identify the metal ions from the colour chart.',
+    ],
+    variables: [
+      {
+        // ── FIXED: id is now 'metal', values are numeric strings 0–6
+        // matching the metals array index in FlameTest.tsx
+        id: 'metal',
+        name: 'Metal Salt',
+        defaultValue: '0',
+        unit: '',
+        options: [
+          { value: '0', label: 'LiCl  — Lithium'   },
+          { value: '1', label: 'NaCl  — Sodium'    },
+          { value: '2', label: 'KCl   — Potassium' },
+          { value: '3', label: 'CaCl₂ — Calcium'   },
+          { value: '4', label: 'SrCl₂ — Strontium' },
+          { value: '5', label: 'CuCl₂ — Copper'    },
+          { value: '6', label: 'BaCl₂ — Barium'    },
+        ],
+      },
+      {
+        id: 'filter',
+        name: 'Cobalt Glass Filter',
+        defaultValue: '0',
+        unit: '',
+        options: [
+          { value: '0', label: 'No filter'         },
+          { value: '1', label: 'Cobalt blue glass'  },
+        ],
+      },
+    ],
+    chartType: 'bar',
+    chartLabel: { title: 'Emission Wavelengths', x: 'Metal Ion', y: 'Wavelength (nm)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'le-chatelier',
+    title: "Le Chatelier's Principle",
+    subject: 'chemistry',
+    ncert: 'Class 11 — Chapter 7',
+    aim: "To study the effect of concentration, temperature, and pressure changes on chemical equilibrium using Le Chatelier's Principle.",
+    theory: "Le Chatelier's Principle: N₂O₄ (colourless) ⇌ 2NO₂ (brown). This endothermic equilibrium shifts forward with heat, backward with pressure.",
+    apparatus: ['Sealed syringe', 'N₂O₄/NO₂ gas mixture', 'Hot water bath', 'Ice bath'],
+    safetyNotes: ['Handle chemicals with gloves', 'Avoid skin contact with NO₂', 'Dispose of chemicals properly'],
+    procedure: [
+      'Observe the initial equilibrium mixture colour in the syringe.',
+      'Record the baseline N₂O₄ and NO₂ mole counts.',
+      'Increase the temperature and observe the colour change.',
+      'Record mole counts at the new equilibrium.',
+      'Compress the syringe (increase pressure) and observe.',
+      'Add N₂O₄ stress and record the forward shift.',
+      'Add NO₂ stress and record the backward shift.',
+    ],
+    variables: [
+      { id: 'temperature', name: 'Temperature', min: 0,   max: 100, step: 5,   defaultValue: 25,  unit: '°C'  },
+      { id: 'pressure',    name: 'Pressure',    min: 0.5, max: 5,   step: 0.5, defaultValue: 1,   unit: 'atm' },
+      {
+        id: 'stress', name: 'Concentration Stress', defaultValue: '0', unit: '',
+        options: [
+          { value: '0', label: 'No stress'     },
+          { value: '1', label: 'Add N₂O₄'      },
+          { value: '2', label: 'Add NO₂'       },
+        ],
+      },
+    ],
+    chartType: 'line',
+    chartLabel: { title: 'Equilibrium Shift', x: 'Condition', y: '% NO₂' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
+    id: 'paper-chromatography',
+    title: 'Paper Chromatography',
+    subject: 'chemistry',
+    ncert: 'Class 11 — Chapter 12',
+    aim: 'To separate and identify the components of a mixture of dyes using paper chromatography and calculate Rf values.',
+    theory: 'Paper chromatography separates components based on their different affinities for the stationary phase (paper) and mobile phase (solvent). Rf = distance travelled by component / distance travelled by solvent.',
+    apparatus: ['Chromatography paper', 'Capillary tube', 'Beaker', 'Solvent', 'Dye mixtures', 'Ruler', 'Pencil'],
+    safetyNotes: ['Solvents are flammable — no flames nearby', 'Work in ventilated area', 'Avoid inhaling solvent vapours'],
+    procedure: [
+      'Draw a pencil line 2cm from the bottom of chromatography paper.',
+      'Apply small spots of dye mixture on the pencil line using a capillary tube.',
+      'Allow spots to dry completely.',
+      'Place paper in beaker with solvent (level below pencil line).',
+      'Cover the beaker and allow solvent to rise.',
+      'Remove paper when solvent is 1cm from top.',
+      'Mark the solvent front and each spot, then calculate Rf values.',
+    ],
+    variables: [
+      {
+        id: 'mixture', name: 'Sample Mixture', defaultValue: '0', unit: '',
+        options: [
+          { value: '0', label: 'Black Ink'       },
+          { value: '1', label: 'Green Food Dye'  },
+          { value: '2', label: 'Plant Extract'   },
+          { value: '3', label: 'Marker Ink'      },
+        ],
+      },
+      {
+        id: 'solvent', name: 'Solvent System', defaultValue: '0', unit: '',
+        options: [
+          { value: '0', label: 'Water (polar)'          },
+          { value: '1', label: 'Ethanol (mid-polar)'    },
+          { value: '2', label: 'Acetone (mid-polar)'    },
+          { value: '3', label: 'Hexane (non-polar)'     },
+        ],
+      },
+      { id: 'runtime', name: 'Run Time', min: 0, max: 15, step: 1, defaultValue: 0, unit: 'min' },
+    ],
+    chartType: 'bar',
+    chartLabel: { title: 'Rf Values', x: 'Component', y: 'Rf Value' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+];
