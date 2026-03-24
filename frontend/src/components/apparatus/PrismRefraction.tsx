@@ -11,26 +11,26 @@ interface ApparatusProps {
 export default function PrismRefraction({ varState, addObservation }: ApparatusProps) {
   const incidentAngle = Number(varState.angle || 45); // 20 to 70 deg
   const materialIdx = Number(varState.material || 1.5); // refractive index mu
-  
+
   const { setValidationError, hasAdjustedSlider } = useLabStore();
 
   // Fixed Equilateral Prism A = 60°
   const A = 60;
   const A_rad = (A * Math.PI) / 180;
-  
+
   // Incident angle in radians
   const i1_rad = (incidentAngle * Math.PI) / 180;
-  
-  // Snell's Law 1st surface: 1 * sin(i1) = μ * sin(r1)
+
+  // Snell's Law at 1st surface: sin(i1) = μ * sin(r1)
   const r1_rad = Math.asin(Math.sin(i1_rad) / materialIdx);
-  
+
   // Geometry of prism: r1 + r2 = A
   const r2_rad = A_rad - r1_rad;
 
-  // Snell's Law 2nd surface: μ * sin(r2) = 1 * sin(i2) (i2=emergent angle e)
+  // Snell's Law at 2nd surface: μ * sin(r2) = sin(e)
   let e_rad = 0;
-  let TIR = false; // Total Internal Reflection check
-  
+  let TIR = false;
+
   const sin_e = materialIdx * Math.sin(r2_rad);
   if (sin_e > 1) {
     TIR = true;
@@ -39,146 +39,331 @@ export default function PrismRefraction({ varState, addObservation }: ApparatusP
   }
 
   const emergentAngle = (e_rad * 180) / Math.PI;
-
-  // Deviation δ = i + e - A
   const deviation = TIR ? 0 : incidentAngle + emergentAngle - A;
 
-  // Geometric coordinates for SVG drawing
-  // Prism Center at (300, 250)
-  // Side length roughly 200px
-  // Points: Top(300, 100), BottomLeft(126.8, 400), BottomRight(473.2, 400)
-  const prismPoints = "300,100 126.8,400 473.2,400";
-  
-  // The first point of contact on left face (x,y)
-  // Line Top -> BottomLeft:
-  // We'll fix contact height for visual simplicity (y = 250)
-  const contact1_y = 250;
-  // Left face line eq: x interpolates between 300 and 126.8 based on y from 100 to 400
-  // fraction = (250 - 100)/(400 - 100) = 150/300 = 0.5
-  // x = 300 + 0.5*(126.8-300) = 300 - 86.6 = 213.4
-  const contact1_x = 213.4;
+  // ─── Prism geometry (SVG coordinates) ───────────────────────────────────────
+  // Equilateral triangle, side ≈ 220px, centered around (300, 280)
+  // Apex at top, base at bottom
+  const apex  = { x: 300, y: 110 };
+  const baseL = { x: 173, y: 390 };
+  const baseR = { x: 427, y: 390 };
 
-  // Normal to left face is -30deg from horizontal (left face angle is 60deg from horiz)
-  // actually, normal to left face points at angle 150deg standard or 5π/6
-  // Inside ray travels at angle (normal1 - r1_deg) ...
-  // Geometry gets complex for SVG without a matrix approach.
-  // Instead of full rigorous geometry mapping for SVG endpoints, we will use SVG transforms 
-  // on a master group or calculate approximate vectors for visual representation.
-  
-  const r1_deg = (r1_rad * 180) / Math.PI;
-  // Bending towards normal on entry.
-  // Beam rotation inside prism.
-  const inside_angle_visual = incidentAngle - r1_deg; 
+  // Left face: from apex to baseL
+  // The outward normal to the left face points LEFT and slightly up.
+  // Left face direction vector (unnormalized): baseL - apex = (-127, 280)
+  // Normal (rotate 90° CCW = outward): (-280, -127) → normalize
+  const leftFaceNorm = Math.sqrt(280 * 280 + 127 * 127);
+  // Outward unit normal of left face (pointing away from prism interior)
+  const leftNormX = -280 / leftFaceNorm;  // ≈ -0.910
+  const leftNormY = -127 / leftFaceNorm;  // ≈ -0.413
 
-  // SVG Refs
-  const rayPathRef = useRef<SVGPathElement>(null);
-  const spectrumRef = useRef<SVGGElement>(null);
+  // Angle of the left face outward normal from positive-x axis (degrees)
+  // This is the direction the "normal line" dashes point
+  const leftNormAngleDeg = (Math.atan2(leftNormY, leftNormX) * 180) / Math.PI; // ≈ -155.6°
+
+  // ─── Entry point: fixed at midpoint of left face ────────────────────────────
+  const t = 0.45; // parametric position along left face
+  const P1 = {
+    x: apex.x + t * (baseL.x - apex.x),
+    y: apex.y + t * (baseL.y - apex.y),
+  };
+
+  // ─── Incident ray direction ──────────────────────────────────────────────────
+  // The incident ray comes from the left. Its angle is measured from the
+  // outward normal of the left face. We need to compute the ray's direction
+  // in SVG space (x rightward, y downward).
+  //
+  // Left face outward normal angle (from +x axis): ~−155.6° (points up-left)
+  // Inward normal angle (into prism): leftNormAngleDeg + 180° ≈ 24.4°
+  //
+  // The incident ray arrives such that it makes angle i1 with the outward normal.
+  // The ray travels in the direction: inward-normal rotated by +i1 (refracted downward).
+  // Concretely, incident ray direction = rotate inward normal by -i1 around it:
+  const inwardNormAngle = leftNormAngleDeg + 180; // ≈ 24.4°
+  const incidentDirAngleDeg = inwardNormAngle - incidentAngle; // rotate by -i1 (upward)
+  const incidentDirRad = (incidentDirAngleDeg * Math.PI) / 180;
+
+  // Trace back from P1 to find laser source (120px back along incident ray)
+  const laserDist = 130;
+  const P0 = {
+    x: P1.x - laserDist * Math.cos(incidentDirRad),
+    y: P1.y - laserDist * Math.sin(incidentDirRad),
+  };
+
+  // ─── Refracted ray inside prism ─────────────────────────────────────────────
+  // Inside ray direction: inward normal rotated by r1 toward the base
+  // (toward the right face), in SVG coords
+  const insideDirAngleDeg = inwardNormAngle + (r1_rad * 180) / Math.PI;
+  const insideDirRad = (insideDirAngleDeg * Math.PI) / 180;
+
+  // ─── Find P2: intersection of inside ray with right face ─────────────────────
+  // Right face: from apex (300,110) to baseR (427,390)
+  // Parametric: Q(s) = apex + s*(baseR - apex)
+  // Ray: P1 + u*(cos insideDirRad, sin insideDirRad)
+  // Solve for s and u
+  const dx = baseR.x - apex.x; // 127
+  const dy = baseR.y - apex.y; // 280
+  const rdx = Math.cos(insideDirRad);
+  const rdy = Math.sin(insideDirRad);
+  // P1 + u*(rdx, rdy) = apex + s*(dx, dy)
+  // u*rdx - s*dx = apex.x - P1.x
+  // u*rdy - s*dy = apex.y - P1.y
+  const det = rdx * (-dy) - (-dx) * rdy; // rdx*(-dy) + dx*rdy
+  const bx = apex.x - P1.x;
+  const by = apex.y - P1.y;
+  const u_param = (bx * (-dy) - (-dx) * by) / det;
+  // const s_param = (rdx * by - bx * rdy) / det; // not needed
+
+  const P2 = {
+    x: P1.x + u_param * rdx,
+    y: P1.y + u_param * rdy,
+  };
+
+  // ─── Right face outward normal ────────────────────────────────────────────────
+  // Right face direction: baseR - apex = (127, 280)
+  // Outward normal (rotate 90° CW = outward to the right): (280, -127) → normalize
+  const rightFaceNorm = Math.sqrt(280 * 280 + 127 * 127); // same magnitude
+  const rightNormX = 280 / rightFaceNorm;   // ≈ 0.910
+  const rightNormY = -127 / rightFaceNorm;  // ≈ -0.413
+  const rightNormAngleDeg = (Math.atan2(rightNormY, rightNormX) * 180) / Math.PI; // ≈ 24.4°
+
+  // ─── Emergent ray direction ───────────────────────────────────────────────────
+  // Emergent ray exits along outward normal rotated by e (emergent angle)
+  const emergentDirAngleDeg = rightNormAngleDeg - emergentAngle; // rotate upward
+  const emergentDirRad = (emergentDirAngleDeg * Math.PI) / 180;
+
+  // Endpoints of the emergent ray (length 160px)
+  const emergentLen = 160;
+  const P3 = {
+    x: P2.x + emergentLen * Math.cos(emergentDirRad),
+    y: P2.y + emergentLen * Math.sin(emergentDirRad),
+  };
+
+  // ─── SVG Refs ─────────────────────────────────────────────────────────────────
+  const incidentRayRef = useRef<SVGLineElement>(null);
+  const insideRayRef   = useRef<SVGLineElement>(null);
+  const emergentRayRef = useRef<SVGLineElement>(null);
+  const spectrumRef    = useRef<SVGGElement>(null);
+  const normal1Ref     = useRef<SVGLineElement>(null);
+  const normal2Ref     = useRef<SVGLineElement>(null);
 
   useEffect(() => {
-    // Generate the path geometry mathematically
-    
-    // Simplification for diagram:
-    // P0: Laser source
-    const startX = 50;
-    const startY = contact1_y - Math.tan((incidentAngle * Math.PI)/180) * (contact1_x - startX);
-    
-    // P1: Contact 1 (Left face)
-    const p1 = { x: contact1_x, y: contact1_y };
+    // Normal at P1 (left face): draw dashes perpendicular to the left face
+    const normalLen = 70;
+    gsap.set(normal1Ref.current, {
+      attr: {
+        x1: P1.x + normalLen * leftNormX,
+        y1: P1.y + normalLen * leftNormY,
+        x2: P1.x - normalLen * leftNormX,
+        y2: P1.y - normalLen * leftNormY,
+      },
+    });
 
-    // P2: Contact 2 (Right face)
-    const rayLengthInside = 150; // Approximated
-    const insideAngleRad = (inside_angle_visual * Math.PI) / 180;
-    // Ray travels downward/horizontal
-    const p2_x = p1.x + rayLengthInside * Math.cos(insideAngleRad);
-    const p2_y = p1.y + rayLengthInside * Math.sin(insideAngleRad);
+    // Normal at P2 (right face)
+    gsap.set(normal2Ref.current, {
+      attr: {
+        x1: P2.x + normalLen * rightNormX,
+        y1: P2.y + normalLen * rightNormY,
+        x2: P2.x - normalLen * rightNormX,
+        y2: P2.y - normalLen * rightNormY,
+      },
+    });
 
+    // Incident ray
+    gsap.to(incidentRayRef.current, {
+      attr: { x1: P0.x, y1: P0.y, x2: P1.x, y2: P1.y },
+      duration: 0.3,
+    });
 
+    // Inside ray
+    gsap.to(insideRayRef.current, {
+      attr: { x1: P1.x, y1: P1.y, x2: P2.x, y2: P2.y },
+      duration: 0.3,
+    });
 
-    const pathData = `M ${startX} ${startY} L ${p1.x} ${p1.y} L ${p2_x} ${p2_y}`;
-
-    // GSAP draw SVG path
-    gsap.set(rayPathRef.current, { attr: { d: pathData } });
-    
     if (TIR) {
-       gsap.set(spectrumRef.current, { opacity: 0 });
+      // Reflect inside the prism back from right face (bounce off left face)
+      // Simplified: draw a reflected line going back left
+      const reflectAngleRad = (insideDirAngleDeg - 2 * (insideDirAngleDeg - (rightNormAngleDeg + 180))) * Math.PI / 180;
+      gsap.set(emergentRayRef.current, {
+        attr: {
+          x1: P2.x,
+          y1: P2.y,
+          x2: P2.x + 100 * Math.cos(reflectAngleRad),
+          y2: P2.y + 100 * Math.sin(reflectAngleRad),
+        },
+      });
+      gsap.to(spectrumRef.current, { opacity: 0, duration: 0.3 });
     } else {
-       gsap.to(spectrumRef.current, { 
-         opacity: 1, 
-         x: p2_x, y: p2_y, 
-         rotation: emergentAngle * (1 + (materialIdx - 1.5)/2), // Spread scales lightly
-         transformOrigin: "left center",
-         duration: 0.5
-       });
-    }
+      // Emergent ray (white)
+      gsap.to(emergentRayRef.current, {
+        attr: { x1: P2.x, y1: P2.y, x2: P3.x, y2: P3.y },
+        duration: 0.3,
+      });
 
-  }, [incidentAngle, materialIdx, inside_angle_visual, emergentAngle, TIR]);
+      // Spectrum fan: each colour exits at a slightly different emergent angle
+      // (dispersion: violet bends more, red bends less)
+      // We spread ±4° around the white emergent angle
+      gsap.to(spectrumRef.current, { opacity: 1, duration: 0.4 });
+    }
+  }, [incidentAngle, materialIdx, TIR,
+    P0.x, P0.y, P1.x, P1.y, P2.x, P2.y, P3.x, P3.y,
+    emergentDirRad, leftNormAngleDeg, rightNormAngleDeg]);
+
+  // Helper: compute emergent endpoint for a given Δe offset (dispersion)
+  const spectrumRay = (deltaEDeg: number) => {
+    const dir = ((emergentDirAngleDeg + deltaEDeg) * Math.PI) / 180;
+    return {
+      x2: P2.x + emergentLen * Math.cos(dir),
+      y2: P2.y + emergentLen * Math.sin(dir),
+    };
+  };
 
   const recordObservation = () => {
     if (!hasAdjustedSlider['prism-refraction']) {
-      setValidationError("Setup Incomplete", "You cannot record data before adjusting the apparatus.", "Adjust the incident angle or change the prism material first.");
+      setValidationError(
+        'Setup Incomplete',
+        'You cannot record data before adjusting the apparatus.',
+        'Adjust the incident angle or change the prism material first.'
+      );
       return;
     }
     if (incidentAngle < 30) {
-      setValidationError("Angle Too Narrow", "At an incidence angle below 30°, the emergent ray might undergo total internal reflection and the deviation curve characteristics won't be easily observable.", "Set the incident angle to at least 35°.");
+      setValidationError(
+        'Angle Too Narrow',
+        'At an incidence angle below 30°, the deviation curve characteristics won\'t be easily observable.',
+        'Set the incident angle to at least 35°.'
+      );
       return;
     }
     if (TIR) {
-      alert("Total Internal Reflection occurred. Cannot measure deviation.");
+      alert('Total Internal Reflection occurred. Cannot measure deviation.');
       return;
     }
     addObservation({
-      "Angle i (°)": incidentAngle,
-      "Angle δ (°)": Number(deviation.toFixed(2))
+      'Angle i (°)': incidentAngle,
+      'Angle r1 (°)': Number(((r1_rad * 180) / Math.PI).toFixed(2)),
+      'Angle e (°)': Number(emergentAngle.toFixed(2)),
+      'Angle δ (°)': Number(deviation.toFixed(2)),
     });
   };
 
+  // Build spectrum ray coords once (React render, not useEffect, so SVG is correct on first paint)
+  const specColors = [
+    { color: 'rgba(255,0,0,0.9)',     delta: -3.0, label: 'R' },
+    { color: 'rgba(255,140,0,0.9)',   delta: -1.8, label: 'O' },
+    { color: 'rgba(255,255,0,0.9)',   delta: -0.8, label: 'Y' },
+    { color: 'rgba(0,200,0,0.9)',     delta:  0.2, label: 'G' },
+    { color: 'rgba(0,80,255,0.9)',    delta:  1.4, label: 'B' },
+    { color: 'rgba(180,0,255,0.9)',   delta:  2.8, label: 'V' },
+  ];
+
   return (
     <div className="w-full h-full flex flex-col items-center justify-center relative bg-[#050B14]">
-      
-      {/* Readouts Header */}
+
+      {/* Readouts */}
       <div className="absolute top-4 left-4 flex gap-4 z-10">
-         <div className="bg-black/60 border border-gray-700 px-4 py-2 rounded">
-            <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Optical Metrics</div>
-            <div className="font-mono text-sm text-accent-cyan flex flex-col gap-1">
-               <span>Incidence: i = {incidentAngle}°</span>
-               <span>Emergence: e = {TIR ? "T.I.R" : emergentAngle.toFixed(2) + "°"}</span>
-               <span>Deviation: δ = {TIR ? "-" : deviation.toFixed(2) + "°"}</span>
-            </div>
-         </div>
+        <div className="bg-black/60 border border-gray-700 px-4 py-2 rounded">
+          <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Optical Metrics</div>
+          <div className="font-mono text-sm text-accent-cyan flex flex-col gap-1">
+            <span>Incidence:  i  = {incidentAngle}°</span>
+            <span>Refraction: r₁ = {((r1_rad * 180) / Math.PI).toFixed(2)}°</span>
+            <span>Emergence:  e  = {TIR ? 'T.I.R' : emergentAngle.toFixed(2) + '°'}</span>
+            <span>Deviation:  δ  = {TIR ? '—' : deviation.toFixed(2) + '°'}</span>
+          </div>
+        </div>
       </div>
 
       <svg width="100%" height="90%" viewBox="0 0 600 500" className="overflow-visible">
-         {/* Normal left face */}
-         <line x1={contact1_x - 80} y1={contact1_y - 46} x2={contact1_x + 80} y2={contact1_y + 46} stroke="#475569" strokeDasharray="5,5" />
-         
-         <polygon points={prismPoints} fill="rgba(0, 212, 255, 0.1)" stroke="rgba(0, 212, 255, 0.5)" strokeWidth="3" />
-         
-         {/* Incident and Inside Ray */}
-         <path ref={rayPathRef} fill="none" stroke="white" strokeWidth="4" />
 
-         {/* Spectral Exit Rays */}
-         <g ref={spectrumRef} opacity={0}>
-            <line x1="0" y1="0" x2="250" y2="40" stroke="rgba(255,0,0,0.8)" strokeWidth="4" />      {/* Red (Least deviated) */}
-            <line x1="0" y1="0" x2="250" y2="50" stroke="rgba(255,165,0,0.8)" strokeWidth="4" />   {/* Orange */}
-            <line x1="0" y1="0" x2="250" y2="60" stroke="rgba(255,255,0,0.8)" strokeWidth="4" />   {/* Yellow */}
-            <line x1="0" y1="0" x2="250" y2="70" stroke="rgba(0,128,0,0.8)" strokeWidth="4" />     {/* Green */}
-            <line x1="0" y1="0" x2="250" y2="80" stroke="rgba(0,0,255,0.8)" strokeWidth="4" />     {/* Blue */}
-            <line x1="0" y1="0" x2="250" y2="90" stroke="rgba(238,130,238,0.8)" strokeWidth="4" /> {/* Violet (Most deviated) */}
-            
-            {/* Extended deviation arc annotation */}
-            <path d="M 120 40 A 100 100 0 0 0 120 -80" fill="none" stroke="yellow" strokeWidth="1" strokeDasharray="3,3" />
-            <text x="130" y="20" fill="yellow" fontSize="14">δ</text>
-         </g>
+        {/* Prism */}
+        <polygon
+          points={`${apex.x},${apex.y} ${baseL.x},${baseL.y} ${baseR.x},${baseR.y}`}
+          fill="rgba(0,212,255,0.08)"
+          stroke="rgba(0,212,255,0.55)"
+          strokeWidth="2.5"
+        />
+
+        {/* Normals (dashed) */}
+        <line ref={normal1Ref} stroke="#475569" strokeDasharray="5,4" strokeWidth="1" />
+        <line ref={normal2Ref} stroke="#475569" strokeDasharray="5,4" strokeWidth="1" />
+
+        {/* Incident ray (white) */}
+        <line ref={incidentRayRef} stroke="white" strokeWidth="3" strokeLinecap="round" />
+
+        {/* Inside ray (cyan-tinted) */}
+        <line ref={insideRayRef} stroke="rgba(0,212,255,0.85)" strokeWidth="3" strokeLinecap="round" />
+
+        {/* Emergent / TIR ray */}
+        <line ref={emergentRayRef} stroke="white" strokeWidth="3" strokeLinecap="round" />
+
+        {/* Spectrum fan */}
+        <g ref={spectrumRef} opacity={TIR ? 0 : 1}>
+          {!TIR && specColors.map(({ color, delta }) => {
+            const { x2, y2 } = spectrumRay(delta);
+            return (
+              <line
+                key={delta}
+                x1={P2.x} y1={P2.y}
+                x2={x2}   y2={y2}
+                stroke={color}
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {/* Deviation arc annotation */}
+          {!TIR && (() => {
+            // Draw a small arc between the incident ray direction and the emergent ray direction
+            // centered at P1 (simple visual indicator)
+            const arcR = 38;
+            const startAngle = incidentDirRad + Math.PI; // reverse (back along incident)
+            const endAngle   = emergentDirRad;
+            const sx = P1.x + arcR * Math.cos(startAngle);
+            const sy = P1.y + arcR * Math.sin(startAngle);
+            const ex = P1.x + arcR * Math.cos(endAngle);
+            const ey = P1.y + arcR * Math.sin(endAngle);
+            return (
+              <>
+                <path
+                  d={`M ${sx} ${sy} A ${arcR} ${arcR} 0 0 1 ${ex} ${ey}`}
+                  fill="none" stroke="yellow" strokeWidth="1" strokeDasharray="3,3"
+                />
+                <text x={P1.x - 28} y={P1.y + 10} fill="yellow" fontSize="13" fontStyle="italic">δ</text>
+              </>
+            );
+          })()}
+        </g>
+
+        {/* TIR label */}
+        {TIR && (
+          <text x="300" y="460" textAnchor="middle" fill="orange" fontSize="13" fontWeight="bold">
+            Total Internal Reflection — no emergent ray
+          </text>
+        )}
+
+        {/* Angle label at incidence point */}
+        <text
+          x={P0.x + 10}
+          y={P0.y - 8}
+          fill="white"
+          fontSize="11"
+          opacity={0.7}
+        >
+          i = {incidentAngle}°
+        </text>
       </svg>
 
-      <div className="absolute top-4 right-4 bg-black/80 px-4 py-3 border border-gray-700 rounded flex flex-col gap-3 min-w-[200px]">
-         <button 
-           onClick={recordObservation}
-           disabled={TIR}
-           className="w-full py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold disabled:opacity-50 transition-colors"
-         >
-           Record δ (Deviation)
-         </button>
+      {/* Record button */}
+      <div className="absolute top-4 right-4 bg-black/80 px-4 py-3 border border-gray-700 rounded min-w-[200px]">
+        <button
+          onClick={recordObservation}
+          disabled={TIR}
+          className="w-full py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold disabled:opacity-50 transition-colors"
+        >
+          Record δ (Deviation)
+        </button>
       </div>
     </div>
   );

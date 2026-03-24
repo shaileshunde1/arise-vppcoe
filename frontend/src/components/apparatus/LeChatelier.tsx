@@ -8,35 +8,16 @@ interface ApparatusProps {
   addObservation: (data: any) => void;
 }
 
-// N₂O₄ ⇌ 2 NO₂   (endothermic forward reaction)
-//
-// Kc at 25°C ≈ 0.14 mol/L  → ~30% NO₂ at baseline
-// Higher temp → Kc increases → more NO₂
-// Higher pressure → shifts backward → more N₂O₄
-// Adding N₂O₄ → shifts forward → more NO₂ until new eq
-// Adding NO₂ → shifts backward → more N₂O₄ until new eq
+// N₂O₄ (colourless) ⇌ 2 NO₂ (brown/reddish-brown) — endothermic forward
 
 const TOTAL_MOLES_BASE = 100;
-const CONTAINER_VOL    = 1.0; // litre
 
 function calcEquilibrium(tempC: number, pressureAtm: number): { n2o4: number; no2: number } {
-  // Kc varies with temperature — endothermic, so Kc increases with T
-  // At 25°C: Kc ≈ 0.14  At 100°C: Kc ≈ 0.9
+  // Kc increases with temperature (endothermic forward)
   const Kc = 0.14 * Math.exp(0.022 * (tempC - 25));
+  const V  = 1.0 / pressureAtm; // effective volume
 
-  // At higher pressure, moles compress into smaller effective volume
-  // We keep total moles fixed but scale volume inversely with pressure
-  const V = CONTAINER_VOL / pressureAtm;
-
-  // Kc = [NO₂]² / [N₂O₄]
-  // Let x = moles of N₂O₄ that dissociate
-  // n2o4 = (1 - alpha)*N  no2 = 2*alpha*N  where alpha = degree of dissociation
-  // Solve: Kc = (2*alpha*N/V)² / ((1-alpha)*N/V)
-  //      = 4*alpha²*N / ((1-alpha)*V)
-  // 4*alpha²*N / ((1-alpha)*V) = Kc
-  // => 4*alpha²*N = Kc*(1-alpha)*V
   const N = TOTAL_MOLES_BASE;
-  // Quadratic: 4N*alpha² + Kc*V*alpha - Kc*V = 0
   const a = 4 * N;
   const b = Kc * V;
   const c = -Kc * V;
@@ -44,96 +25,84 @@ function calcEquilibrium(tempC: number, pressureAtm: number): { n2o4: number; no
   let alpha = (-b + Math.sqrt(disc)) / (2 * a);
   alpha = Math.max(0.01, Math.min(0.98, alpha));
 
-  const no2  = 2 * alpha * N;
-  const n2o4 = (1 - alpha) * N;
-  return { n2o4, no2 };
+  return { n2o4: (1 - alpha) * N, no2: 2 * alpha * N };
 }
 
 export default function LeChatelier({ varState, addObservation }: ApparatusProps) {
   const temperature = Number(varState.temperature ?? 25);
   const pressure    = Number(varState.pressure    ?? 1);
-  const stress      = Number(varState.stress      ?? 0); // 0=none, 1=add N₂O₄, 2=add NO₂
+  const stress      = Number(varState.stress      ?? 0);
 
   const { setValidationError } = useLabStore();
 
-  // Track initial/baseline conditions to detect real stress application
-  const initialConditions = useRef({ temperature: 25, pressure: 1, stress: 0 });
-  const hasChangedFromBaseline = useRef(false);
-
-  const [molesN2O4,     setMolesN2O4]     = useState(70);
-  const [molesNO2,      setMolesNO2]      = useState(30);
+  const [molesN2O4,       setMolesN2O4]       = useState(70);
+  const [molesNO2,        setMolesNO2]        = useState(30);
   const [isEquilibrating, setIsEquilibrating] = useState(false);
-  const [appliedStressOnce, setAppliedStressOnce] = useState(false);
+  const [appliedStress,   setAppliedStress]   = useState(false);
+  const [shiftDir,        setShiftDir]        = useState('At equilibrium');
 
-  const gasColorRef   = useRef<SVGPathElement>(null);
-  const prevStress    = useRef(0);
-  const animProxy     = useRef({ n2o4: 70, no2: 30 });
-  const isMounted     = useRef(false);
+  const gasColorRef  = useRef<SVGRectElement>(null);
+  const prevStress   = useRef(0);
+  const animProxy    = useRef({ n2o4: 70, no2: 30 });
+  const isMounted    = useRef(false);
 
-  // Detect whether conditions have actually changed from baseline
   useEffect(() => {
     if (!isMounted.current) {
       isMounted.current = true;
-      return; // skip first render — don't treat initial values as stress
+      return;
     }
 
-    const changed =
-      temperature !== initialConditions.current.temperature ||
-      pressure    !== initialConditions.current.pressure    ||
-      stress      !== initialConditions.current.stress;
+    setAppliedStress(true);
 
-    if (changed) {
-      hasChangedFromBaseline.current = true;
-      setAppliedStressOnce(true);
-    }
-
-    // --- Compute target equilibrium ---
     let baseN2O4 = animProxy.current.n2o4;
     let baseNO2  = animProxy.current.no2;
 
-    // Apply concentration stress — add extra moles before computing new equilibrium
+    // Apply concentration stress
     if (stress !== prevStress.current) {
-      if (stress === 1) { baseN2O4 += 20; } // add N₂O₄ → shifts forward
-      if (stress === 2) { baseNO2  += 20; } // add NO₂  → shifts backward
+      if (stress === 1) baseN2O4 += 25; // add N₂O₄
+      if (stress === 2) baseNO2  += 25; // add NO₂
       prevStress.current = stress;
     }
 
-    // Compute new equilibrium from thermodynamics
     const { n2o4: eqN2O4, no2: eqNO2 } = calcEquilibrium(temperature, pressure);
-
-    // Scale to current total moles (which may have grown if concentration stress was added)
     const currentTotal = baseN2O4 + baseNO2;
     const eqTotal      = eqN2O4 + eqNO2;
     const scale        = currentTotal / eqTotal;
 
-    const targetN2O4 = eqN2O4 * scale;
-    const targetNO2  = eqNO2  * scale;
+    const targetN2O4   = eqN2O4 * scale;
+    const targetNO2    = eqNO2  * scale;
     const targetPctNO2 = targetNO2 / (targetN2O4 + targetNO2);
 
-    setIsEquilibrating(true);
+    // Determine shift direction
+    const currentPct = animProxy.current.no2 / (animProxy.current.n2o4 + animProxy.current.no2);
+    if (targetPctNO2 > currentPct + 0.02)      setShiftDir('Forward shift → (more NO₂, darker)');
+    else if (targetPctNO2 < currentPct - 0.02) setShiftDir('Backward shift ← (more N₂O₄, lighter)');
+    else                                         setShiftDir('At equilibrium');
 
-    // Kill any running animations
+    setIsEquilibrating(true);
     gsap.killTweensOf(animProxy.current);
     gsap.killTweensOf('.lc-piston');
 
-    // Piston position: higher pressure → piston moves down (compresses)
-    // pressure range 0.5–5 atm, piston Y range -80 to -220 (in syringe coords)
-    const pistonY = -80 - ((pressure - 0.5) / 4.5) * 140;
-    gsap.to('.lc-piston', { y: pistonY, duration: 0.7, ease: 'power2.out' });
+    // Piston compression: 1 atm = piston at 0 offset, 5 atm = piston down 120px
+    const pistonOffset = ((pressure - 0.5) / 4.5) * 120;
+    gsap.to('.lc-piston', { y: pistonOffset, duration: 0.8, ease: 'power2.out' });
 
-    // Gas color: deeper brown = more NO₂
+    // Gas colour animation — deeper brown = more NO₂
     if (gasColorRef.current) {
+      const r = Math.round(80 + targetPctNO2 * 130);
+      const g = Math.round(50 - targetPctNO2 * 30);
+      const b = 10;
+      const a = (0.15 + targetPctNO2 * 0.7).toFixed(2);
       gsap.to(gasColorRef.current, {
-        fill: `rgba(139, 69, 19, ${(targetPctNO2 * 0.85).toFixed(3)})`,
-        duration: 1.4, ease: 'sine.inOut',
+        attr: { fill: `rgba(${r},${g},${b},${a})` },
+        duration: 1.5, ease: 'sine.inOut',
       });
     }
 
-    // Animate mole counts
     gsap.to(animProxy.current, {
       n2o4: targetN2O4,
       no2:  targetNO2,
-      duration: 1.5,
+      duration: 1.6,
       ease: 'sine.inOut',
       onUpdate: () => {
         setMolesN2O4(animProxy.current.n2o4);
@@ -141,221 +110,229 @@ export default function LeChatelier({ varState, addObservation }: ApparatusProps
       },
       onComplete: () => setIsEquilibrating(false),
     });
-
   }, [temperature, pressure, stress]);
 
   const recordObservation = () => {
-    if (!appliedStressOnce) {
-      setValidationError(
-        "No Stress Applied",
-        "You haven't changed any conditions from the baseline yet.",
-        "Adjust the temperature, pressure, or add a concentration stress to apply Le Chatelier's principle."
-      );
+    if (!appliedStress) {
+      setValidationError('No Stress Applied', 'Adjust temperature, pressure, or concentration.', 'Change a variable using the left panel sliders first.');
       return;
     }
     if (isEquilibrating) {
-      setValidationError(
-        "System Equilibrating",
-        "The system is still shifting to a new equilibrium.",
-        "Wait for the animation to finish before recording observations."
-      );
+      setValidationError('Still Equilibrating', 'Wait for the system to reach new equilibrium.', 'The animation must finish before recording.');
       return;
     }
-
-    const total   = molesN2O4 + molesNO2;
-    const pctNO2  = (molesNO2 / total) * 100;
-
-    const stressLabels: Record<number, string> = {
-      0: 'None',
-      1: 'Added N₂O₄',
-      2: 'Added NO₂',
-    };
-
+    const total  = molesN2O4 + molesNO2;
+    const pctNO2 = (molesNO2 / total) * 100;
     addObservation({
-      "Temperature (°C)":  temperature,
-      "Pressure (atm)":    Number(pressure.toFixed(1)),
-      "Stress Applied":    stressLabels[stress] ?? 'None',
-      "N₂O₄ (mol)":       Number(molesN2O4.toFixed(1)),
-      "NO₂ (mol)":         Number(molesNO2.toFixed(1)),
-      "% NO₂":             Number(pctNO2.toFixed(1)),
-      "Shift Direction":   getShiftText(pctNO2),
+      'Temperature (°C)': temperature,
+      'Pressure (atm)':   +pressure.toFixed(1),
+      'Stress Applied':   stress === 0 ? 'None' : stress === 1 ? 'Added N₂O₄' : 'Added NO₂',
+      'N₂O₄ (mol)':      +molesN2O4.toFixed(1),
+      'NO₂ (mol)':        +molesNO2.toFixed(1),
+      '% NO₂':            +pctNO2.toFixed(1),
+      'Shift':            shiftDir,
     });
   };
 
-  function getShiftText(pctNO2: number): string {
-    if (pctNO2 > 36) return 'Forward (→ more NO₂)';
-    if (pctNO2 < 24) return 'Backward (← more N₂O₄)';
-    return 'At Equilibrium';
-  }
+  const total   = molesN2O4 + molesNO2;
+  const pctNO2  = molesNO2 / total;
 
-  const total       = molesN2O4 + molesNO2;
-  const pctNO2      = molesNO2 / total;
-  const shiftText   = getShiftText(pctNO2 * 100);
-  const shiftColor  = pctNO2 > 0.36 ? '#f59e0b' : pctNO2 < 0.24 ? '#60a5fa' : '#94a3b8';
+  // Colour swatch for current NO₂ concentration
+  const r = Math.round(80 + pctNO2 * 130);
+  const g = Math.round(50 - pctNO2 * 30);
+  const currentColor = `rgba(${r},${g},10,${(0.15 + pctNO2 * 0.7).toFixed(2)})`;
+  const shiftColor   = shiftDir.includes('Forward') ? '#f59e0b'
+    : shiftDir.includes('Backward') ? '#60a5fa' : '#94a3b8';
+
+  // Piston compression visualization
+  const syringeGasHeight = 200 - ((pressure - 0.5) / 4.5) * 120;
 
   return (
     <div style={{
       width: '100%', height: '100%',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      position: 'relative', background: '#02060d', padding: 32,
+      position: 'relative', background: '#02060d', padding: 24,
     }}>
 
       {/* Readouts */}
       <div style={{
         position: 'absolute', top: 16, left: 16,
-        background: 'rgba(0,0,0,0.65)', border: '1px solid #374151',
-        padding: '8px 16px', borderRadius: 8, zIndex: 10, pointerEvents: 'none',
+        background: 'rgba(0,0,0,0.7)', border: '1px solid #374151',
+        padding: '10px 16px', borderRadius: 8, zIndex: 10, pointerEvents: 'none',
       }}>
-        <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>Equilibrium State</div>
-        <div style={{ fontFamily: 'monospace', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ fontSize: 10, color: '#9ca3af', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+          Equilibrium State
+        </div>
+        <div style={{ fontFamily: 'monospace', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={{ color: '#e2e8f0' }}>N₂O₄ (colourless): {molesN2O4.toFixed(1)} mol</span>
           <span style={{ color: '#b45309' }}>NO₂ (brown): {molesNO2.toFixed(1)} mol</span>
           <span style={{ color: '#9ca3af' }}>% NO₂: {(pctNO2 * 100).toFixed(1)}%</span>
-          <span style={{ color: '#00d4ff', borderTop: '1px solid #374151', paddingTop: 4, marginTop: 2 }}>
+
+          {/* Visual colour swatch */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <div style={{
+              width: 48, height: 24, borderRadius: 4,
+              background: currentColor,
+              border: '1px solid rgba(255,255,255,0.15)',
+              transition: 'background 1.5s ease',
+            }} />
+            <span style={{ color: '#64748b', fontSize: 11 }}>
+              {pctNO2 > 0.5 ? 'Dark brown' : pctNO2 > 0.3 ? 'Orange-brown' : 'Light straw'}
+            </span>
+          </div>
+
+          <span style={{ color: '#00d4ff', borderTop: '1px solid #374151', paddingTop: 6, marginTop: 4 }}>
             {temperature}°C | {pressure.toFixed(1)} atm
           </span>
-          <span style={{ color: shiftColor }}>{shiftText}</span>
+          <span style={{ color: shiftColor, fontWeight: 600 }}>{shiftDir}</span>
           {isEquilibrating && (
-            <span style={{ color: '#fbbf24', fontSize: 11 }}>⟳ Equilibrating…</span>
+            <span style={{ color: '#fbbf24', fontSize: 11, animation: 'pulse 1s infinite' }}>⟳ Equilibrating…</span>
           )}
         </div>
       </div>
 
-      <svg width="600" height="420" viewBox="0 0 600 420"
-        style={{ overflow: 'visible' }}>
+      <svg width="640" height="460" viewBox="0 0 640 460" style={{ overflow: 'visible' }}>
 
         {/* Reaction equation */}
-        <text x="300" y="28" fill="#64748b" fontSize="13" textAnchor="middle">
-          N₂O₄ (colourless) ⇌ 2 NO₂ (brown) — endothermic forward
+        <text x="320" y="26" fill="#475569" fontSize="13" textAnchor="middle">
+          N₂O₄ (colourless) ⇌ 2 NO₂ (brown) — endothermic →
         </text>
 
-        {/* Temperature bath indicator */}
-        <rect x="140" y="335" width="320" height="44"
-          fill={
-            temperature > 50  ? 'rgba(239,68,68,0.18)' :
-            temperature > 35  ? 'rgba(249,115,22,0.12)' :
-            temperature < 15  ? 'rgba(59,130,246,0.18)' :
-            'rgba(255,255,255,0.04)'
-          }
-          rx="10" />
-        <text x="300" y="362"
-          fill={
-            temperature > 50  ? '#ef4444' :
-            temperature > 35  ? '#f97316' :
-            temperature < 15  ? '#60a5fa' :
-            '#94a3b8'
-          }
-          fontSize="14" fontWeight="bold" textAnchor="middle">
-          {temperature > 50  ? '🔥 Hot Water Bath' :
-           temperature > 35  ? '♨️ Warm Bath' :
-           temperature < 15  ? '❄️ Ice Bath' :
-           '🌡 Ambient (~25°C)'}
-        </text>
+        {/* ── Syringe / sealed vessel ── */}
+        <g transform="translate(320, 390)">
+          {/* Piston handle — moves down when pressure increases */}
+          <g className="lc-piston" transform="translate(0,0)">
+            <rect x="-50" y={-syringeGasHeight - 30} width="100" height="20"
+              fill="#1e293b" rx="4" stroke="#475569" strokeWidth="1" />
+            <rect x="-8" y={-syringeGasHeight - 10} width="16" height={syringeGasHeight + 10}
+              fill="#e2e8f0" rx="2" opacity="0.7" />
+            <text x="0" y={-syringeGasHeight - 38} fill="#64748b" fontSize="10" textAnchor="middle">
+              {pressure.toFixed(1)} atm
+            </text>
+          </g>
 
-        {/* Syringe body */}
-        <g transform="translate(300, 310)">
-          {/* Syringe flange */}
-          <rect x="-65" y="-4" width="130" height="12" fill="#334155" rx="3" />
           {/* Glass tube */}
-          <path d="M -42 0 L -42 -270 L 42 -270 L 42 0 Z"
-            fill="rgba(255,255,255,0.04)" stroke="#64748b" strokeWidth="4" />
+          <rect x="-55" y={-syringeGasHeight - 8} width="110" height={syringeGasHeight + 50}
+            fill="rgba(255,255,255,0.03)" stroke="#64748b" strokeWidth="3" rx="4" />
 
-          {/* Gas fill — color driven by NO₂ concentration */}
-          <path ref={gasColorRef}
-            d="M -40 -2 L 40 -2 L 40 -215 L -40 -215 Z"
-            fill="rgba(139,69,19,0.3)"
+          {/* Gas inside — colour represents NO₂ concentration */}
+          <rect ref={gasColorRef}
+            x="-52" y={-syringeGasHeight - 4}
+            width="104" height={syringeGasHeight + 2}
+            fill={currentColor}
+            rx="2"
+            style={{ transition: 'fill 1.5s ease' }}
           />
 
-          {/* Molecule dots for visual richness */}
-          {[...Array(8)].map((_, i) => {
-            const row = Math.floor(i / 4);
+          {/* NO₂ molecule dots — more visible when more NO₂ */}
+          {Array.from({ length: 12 }).map((_, i) => {
             const col = i % 4;
+            const row = Math.floor(i / 4);
+            const isNO2 = i < Math.round(pctNO2 * 12);
             return (
               <circle key={i}
-                cx={-25 + col * 17}
-                cy={-40 - row * 50}
-                r="4"
-                fill={i % 3 === 0 ? `rgba(139,69,19,${(pctNO2 * 0.9).toFixed(2)})` : 'rgba(200,200,200,0.15)'}
+                cx={-35 + col * 24}
+                cy={-syringeGasHeight + 20 + row * 30}
+                r={isNO2 ? 5 : 3.5}
+                fill={isNO2 ? `rgba(180,83,9,${0.7 + pctNO2 * 0.3})` : 'rgba(200,200,200,0.12)'}
+                style={{ transition: 'all 1.5s ease' }}
               />
             );
           })}
 
-          {/* Piston — starts at y=-180 (1 atm), moves down with pressure */}
-          <g className="lc-piston" transform="translate(0, -180)">
-            <rect x="-40" y="-8" width="80" height="18" fill="#1e293b" rx="3" />
-            <rect x="-8" y="10" width="16" height="180" fill="#e2e8f0" rx="2" />
-            <rect x="-42" y="190" width="84" height="16" fill="#334155" rx="5" />
-          </g>
+          {/* Volume scale on side */}
+          <text x="62" y={-syringeGasHeight + 10} fill="#475569" fontSize="9" textAnchor="start">←gas</text>
+          <text x="62" y="40" fill="#475569" fontSize="9" textAnchor="start">sealed</text>
 
-          {/* Syringe tip */}
-          <path d="M -8 0 L 8 0 L 5 36 L -5 36 Z" fill="#64748b" />
+          {/* Pressure arrows when compressed */}
+          {pressure > 1.5 && (
+            <g>
+              <text x="-80" y={-syringeGasHeight / 2} fill="#60a5fa" fontSize="20" textAnchor="middle">↓</text>
+              <text x="80"  y={-syringeGasHeight / 2} fill="#60a5fa" fontSize="20" textAnchor="middle">↓</text>
+            </g>
+          )}
         </g>
 
-        {/* Pressure arrows — appear when pressure > 1.5 */}
-        {pressure > 1.5 && (
-          <g>
-            <text x="440" y="200" fill="#60a5fa" fontSize="22" textAnchor="middle">↓</text>
-            <text x="440" y="220" fill="#60a5fa" fontSize="10" textAnchor="middle">{pressure.toFixed(1)} atm</text>
-          </g>
-        )}
+        {/* ── Temperature bath ── */}
+        <rect x="160" y="380" width="300" height="50"
+          fill={
+            temperature > 55  ? 'rgba(239,68,68,0.2)'  :
+            temperature > 35  ? 'rgba(249,115,22,0.15)' :
+            temperature < 15  ? 'rgba(59,130,246,0.2)'  :
+            'rgba(255,255,255,0.04)'
+          }
+          rx="8" />
+        <text x="310" y="411"
+          fill={
+            temperature > 55  ? '#ef4444' :
+            temperature > 35  ? '#f97316' :
+            temperature < 15  ? '#60a5fa' : '#94a3b8'
+          }
+          fontSize="14" fontWeight="700" textAnchor="middle">
+          {temperature > 55  ? '🔥 Hot bath — forward shift'  :
+           temperature > 35  ? '♨ Warm — slight forward shift' :
+           temperature < 15  ? '❄ Ice bath — backward shift'   :
+           '🌡 Ambient (~25°C)'}
+        </text>
+        <text x="310" y="425" fill="#475569" fontSize="10" textAnchor="middle">
+          {temperature}°C
+        </text>
 
-        {/* Temperature arrow */}
-        {temperature !== 25 && (
-          <g>
-            <text x="160" y="200"
-              fill={temperature > 25 ? '#ef4444' : '#60a5fa'}
-              fontSize="22" textAnchor="middle">
-              {temperature > 25 ? '↑' : '↓'}
-            </text>
-            <text x="160" y="218"
-              fill={temperature > 25 ? '#ef4444' : '#60a5fa'}
-              fontSize="10" textAnchor="middle">
-              {temperature}°C
-            </text>
-          </g>
-        )}
+        {/* ── Colour reference scale ── */}
+        <g transform="translate(540, 60)">
+          <text x="0" y="0" fill="#64748b" fontSize="10" fontWeight="700">NO₂ %</text>
+          {[0.1, 0.3, 0.5, 0.7, 0.9].map((p, i) => {
+            const yr = Math.round(80 + p * 130);
+            const yg = Math.round(50 - p * 30);
+            return (
+              <g key={i} transform={`translate(0, ${16 + i * 28})`}>
+                <rect x="0" y="0" width="30" height="22" rx="3"
+                  fill={`rgba(${yr},${yg},10,${(0.15 + p * 0.7).toFixed(2)})`}
+                  stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                <text x="36" y="15" fill="#64748b" fontSize="9">
+                  {Math.round(p * 100)}%
+                </text>
+              </g>
+            );
+          })}
+          <text x="0" y="165" fill="#374151" fontSize="8">colour scale</text>
+        </g>
       </svg>
 
       {/* Control panel */}
       <div style={{
         position: 'absolute', top: 16, right: 16,
-        background: 'rgba(0,0,0,0.85)', padding: '12px 16px',
+        background: 'rgba(0,0,0,0.88)', padding: '12px 16px',
         border: '1px solid #374151', borderRadius: 10, zIndex: 20,
-        display: 'flex', flexDirection: 'column', gap: 10, minWidth: 210,
+        display: 'flex', flexDirection: 'column', gap: 10, minWidth: 215,
       }}>
-        <button
-          onClick={recordObservation}
-          style={{
-            width: '100%', padding: '9px',
-            background: 'rgba(59,130,246,0.2)', color: '#60a5fa',
-            border: '1px solid rgba(59,130,246,0.5)',
-            borderRadius: 6, fontWeight: 700, fontSize: 13,
-            cursor: 'pointer', transition: 'all 0.2s',
-          }}
-        >
+        <button onClick={recordObservation} style={{
+          width: '100%', padding: 9,
+          background: 'rgba(59,130,246,0.2)', color: '#60a5fa',
+          border: '1px solid rgba(59,130,246,0.5)',
+          borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+        }}>
           Log Equilibrium State
         </button>
 
         {isEquilibrating && (
-          <div style={{ fontSize: 11, color: '#fbbf24', textAlign: 'center' }}>
-            ⟳ System equilibrating…
+          <div style={{ fontSize: 11, color: '#fbbf24', textAlign: 'center' }}>⟳ Equilibrating…</div>
+        )}
+        {!appliedStress && (
+          <div style={{ fontSize: 11, color: '#6b7280', textAlign: 'center', lineHeight: 1.6 }}>
+            Adjust temperature, pressure, or add a concentration stress to apply Le Chatelier's principle.
           </div>
         )}
 
-        {!appliedStressOnce && (
-          <div style={{ fontSize: 11, color: '#6b7280', textAlign: 'center', lineHeight: 1.5 }}>
-            Adjust temperature, pressure, or add a concentration stress to begin.
+        <div style={{ borderTop: '1px solid #374151', paddingTop: 8 }}>
+          <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            Le Chatelier Rules
           </div>
-        )}
-
-        {/* Legend */}
-        <div style={{ borderTop: '1px solid #374151', paddingTop: 8, marginTop: 2 }}>
-          <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Le Chatelier Rules</div>
-          <div style={{ fontSize: 11, color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: 4, lineHeight: 1.5 }}>
-            <span>🌡 ↑ Temp → more NO₂ (forward)</span>
-            <span>⬆ ↑ Pressure → more N₂O₄ (back)</span>
-            <span>+ N₂O₄ → forward shift</span>
-            <span>+ NO₂ → backward shift</span>
+          <div style={{ fontSize: 11, color: '#9ca3af', display: 'flex', flexDirection: 'column', gap: 5, lineHeight: 1.6 }}>
+            <span>🌡 ↑ Temp → forward → more NO₂ (darker)</span>
+            <span>⬆ ↑ Pressure → backward → more N₂O₄ (lighter)</span>
+            <span>+ N₂O₄ → shifts forward → darker</span>
+            <span>+ NO₂ → shifts backward → then lighter</span>
           </div>
         </div>
       </div>
