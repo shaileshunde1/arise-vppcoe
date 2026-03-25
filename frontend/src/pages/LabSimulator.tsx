@@ -19,29 +19,7 @@ const apparatusMap: Record<string, React.LazyExoticComponent<React.ComponentType
 };
 
 // ── Proctoring constants ─────────────────────────────────────
-const MAX_TAB_VIOLATIONS = 2;   // auto-discard after 2nd tab switch
-const NO_FACE_THRESHOLD  = 4;   // consecutive 2-s polls with no face → warn
-const LOOK_AWAY_THRESHOLD = 3;
-const FACE_POLL_MS       = 2000;
-
-type FaceStatus = 'checking' | 'ok' | 'missing' | 'multiple' | 'lookaway';
-
-async function detectFaceStatus(detector: any, video: HTMLVideoElement): Promise<FaceStatus> {
-  try {
-    const faces: any[] = await detector.detect(video);
-    if (faces.length === 0) return 'missing';
-    if (faces.length > 1)  return 'multiple';
-    const box   = faces[0].boundingBox;
-    const vidW  = video.videoWidth  || 320;
-    const vidH  = video.videoHeight || 240;
-    const offX  = Math.abs((box.x + box.width  / 2) - vidW / 2) / vidW;
-    const offY  = Math.abs((box.y + box.height / 2) - vidH / 2) / vidH;
-    if (offX > 0.40 || offY > 0.42) return 'lookaway';
-    return 'ok';
-  } catch {
-    return 'ok';
-  }
-}
+const MAX_TAB_VIOLATIONS = 2;
 
 function buildInsightPrompt(expTitle: string, expId: string, data: any[]): string {
   const dataStr = data.map((d, i) =>
@@ -98,13 +76,9 @@ export default function LabSimulator() {
   const [aiLoading,  setAiLoading]  = useState(false);
   const lastAnalyzedCount = useRef(0);
 
-  // ── Setup phase: camera first ────────────────────────────────
-  const [setupPhase,    setSetupPhase]    = useState<'camera' | 'ready'>('camera');
-  const [cameraGranted, setCameraGranted] = useState<boolean | null>(null);
-
   // ── Fullscreen ───────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isPaused,     setIsPaused]     = useState(false);  // fullscreen-exit pause
+  const [isPaused,     setIsPaused]     = useState(false);
   const [fsRequested,  setFsRequested]  = useState(false);
 
   // ── Tab-switch ───────────────────────────────────────────────
@@ -114,89 +88,29 @@ export default function LabSimulator() {
   const [tabAutoSubmitting, setTabAutoSubmitting]  = useState(false);
   const tabAutoSubmitRef    = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Camera / face detection ──────────────────────────────────
-  const videoRef         = useRef<HTMLVideoElement>(null);
-  const streamRef        = useRef<MediaStream | null>(null);
-  const faceDetectorRef  = useRef<any>(null);
-  const faceIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [faceStatus,     setFaceStatus]  = useState<FaceStatus>('checking');
-  const noFaceCountRef   = useRef(0);
-  const lookAwayCountRef = useRef(0);
-  const [camWarning,     setCamWarning]  = useState<string | null>(null);
+  // snapshot ref so callbacks always have fresh values
+  const snapshotRef = useRef<{
+    currentData: any[];
+    timer: number;
+    scoreTotal: number;
+    currentSteps: number[];
+  }>({ currentData: [], timer: 0, scoreTotal: 0, currentSteps: [] });
 
   // ────────────────────────────────────────────────────────────
-  // STEP 1: Camera permission FIRST
+  // Init: set variable defaults + enter fullscreen
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!exp) { navigate('/labs'); return; }
-    // Init variable defaults
     const initialVars: Record<string, number | string> = {};
     exp.variables.forEach(v => { initialVars[v.id] = v.defaultValue; });
     setVarState(initialVars);
 
-    let mounted = true;
-    const requestCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
-        if (mounted) setCameraGranted(true);
-      } catch {
-        if (mounted) setCameraGranted(false);
-      }
-    };
-    requestCamera();
-    return () => { mounted = false; };
-  }, [exp, navigate]);
-
-  // STEP 2: After camera resolves → enter fullscreen
-  useEffect(() => {
-    if (cameraGranted === null) return;
     const t = setTimeout(() => {
       enterFullscreen();
       setFsRequested(true);
-      setSetupPhase('ready');
-    }, 400);
+    }, 200);
     return () => clearTimeout(t);
-  }, [cameraGranted]);
-
-  // ────────────────────────────────────────────────────────────
-  // Face detection loop
-  // ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (cameraGranted !== true || setupPhase !== 'ready') return;
-    if (!('FaceDetector' in window)) { setFaceStatus('ok'); return; }
-
-    faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true });
-
-    faceIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2 || showResults) return;
-      const status = await detectFaceStatus(faceDetectorRef.current, videoRef.current);
-      setFaceStatus(status);
-
-      if (status === 'missing') {
-        noFaceCountRef.current   += 1;
-        lookAwayCountRef.current  = 0;
-        if (noFaceCountRef.current === NO_FACE_THRESHOLD)
-          setCamWarning('⚠ Face not detected. Please stay in front of the camera.');
-      } else if (status === 'lookaway') {
-        noFaceCountRef.current    = 0;
-        lookAwayCountRef.current += 1;
-        if (lookAwayCountRef.current === LOOK_AWAY_THRESHOLD)
-          setCamWarning('⚠ Please keep your attention on the screen.');
-      } else if (status === 'multiple') {
-        noFaceCountRef.current   = 0;
-        lookAwayCountRef.current = 0;
-        setCamWarning('⚠ Multiple faces detected!');
-      } else {
-        noFaceCountRef.current   = 0;
-        lookAwayCountRef.current = 0;
-        if (camWarning) setCamWarning(null);
-      }
-    }, FACE_POLL_MS);
-
-    return () => { if (faceIntervalRef.current) clearInterval(faceIntervalRef.current); };
-  }, [cameraGranted, setupPhase, showResults]);
+  }, [exp, navigate]);
 
   // ────────────────────────────────────────────────────────────
   // Fullscreen helpers
@@ -216,7 +130,7 @@ export default function LabSimulator() {
     const handleFsChange = () => {
       const inFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(inFs);
-      if (!inFs && fsRequested && setupPhase === 'ready') setIsPaused(true);
+      if (!inFs && fsRequested) setIsPaused(true);
     };
     document.addEventListener('fullscreenchange',       handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
@@ -224,45 +138,68 @@ export default function LabSimulator() {
       document.removeEventListener('fullscreenchange',       handleFsChange);
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
-  }, [fsRequested, setupPhase]);
+  }, [fsRequested]);
 
   // ────────────────────────────────────────────────────────────
   // Alt-tab detection
   // ────────────────────────────────────────────────────────────
- useEffect(() => {
-  const handleBlur = () => {
-    if (showResults || setupPhase !== 'ready') return;
-    setIsPaused(true);
-    tabViolationsRef.current += 1;
-    if (tabViolationsRef.current >= MAX_TAB_VIOLATIONS) {
-      setTabWarning(true);
-      setTabAutoSubmitting(true);
-      setTabCountdown(10);
-      if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
-      tabAutoSubmitRef.current = setInterval(() => {
-        setTabCountdown(prev => {
-          if (prev <= 1) { clearInterval(tabAutoSubmitRef.current!); if (exp) resetLabProgress(exp.id); exitFullscreenAPI(); navigate('/labs'); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      setTabWarning(true);
-    }
-  };
-  const handleFocus = () => {
-    if (tabViolationsRef.current < MAX_TAB_VIOLATIONS) {
-      setTabWarning(false);
-      setIsPaused(false);
-    }
-  };
-  window.addEventListener('blur', handleBlur);
-  window.addEventListener('focus', handleFocus);
-  return () => { window.removeEventListener('blur', handleBlur); window.removeEventListener('focus', handleFocus); };
-}, [showResults, setupPhase, exp, navigate, resetLabProgress]);
+  useEffect(() => {
+    const handleBlur = () => {
+      if (showResults) return;
+      setIsPaused(true);
+      tabViolationsRef.current += 1;
+
+      if (tabViolationsRef.current >= MAX_TAB_VIOLATIONS) {
+        setTabAutoSubmitting(true);
+        setTabWarning(true);
+        setTabCountdown(10);
+        if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
+        tabAutoSubmitRef.current = setInterval(() => {
+          setTabCountdown(prev => {
+            if (prev <= 1) {
+              clearInterval(tabAutoSubmitRef.current!);
+              const snap = snapshotRef.current;
+              if (exp && snap.currentData.length > 0) {
+                saveToJournal({
+                  experimentId: exp.id,
+                  lab: exp.title,
+                  date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                  timeSeconds: snap.timer,
+                  score: snap.scoreTotal,
+                  observations: snap.currentData,
+                  completedSteps: snap.currentSteps,
+                });
+              }
+              resetLabProgress(exp!.id);
+              exitFullscreenAPI();
+              navigate('/labs');
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setTabWarning(true);
+      }
+    };
+
+    const handleFocus = () => {
+      if (tabViolationsRef.current < MAX_TAB_VIOLATIONS) {
+        setTabWarning(false);
+        setIsPaused(false);
+      }
+    };
+
+    window.addEventListener('blur',  handleBlur);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('blur',  handleBlur);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [showResults, exp, navigate, resetLabProgress, saveToJournal]);
+
   // Cleanup
   useEffect(() => () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    if (faceIntervalRef.current)  clearInterval(faceIntervalRef.current);
     if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
     if (document.fullscreenElement) exitFullscreenAPI();
   }, []);
@@ -271,10 +208,10 @@ export default function LabSimulator() {
   // Timer (pauses when isPaused or tabWarning)
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isPaused || tabWarning || showResults || setupPhase !== 'ready') return;
+    if (isPaused || tabWarning || showResults) return;
     const interval = setInterval(() => setTimer(t => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [isPaused, tabWarning, showResults, setupPhase]);
+  }, [isPaused, tabWarning, showResults]);
 
   // ────────────────────────────────────────────────────────────
   // AI Insight
@@ -309,6 +246,13 @@ export default function LabSimulator() {
   const currentSteps = completedSteps[exp.id]  || [];
   const ApparatusComponent = apparatusMap[exp.id];
 
+  const scoreCompletion = Math.round((currentSteps.length / exp.procedure.length) * exp.scoring.completion);
+  const scoreAccuracy   = Math.round(exp.scoring.accuracy * 0.9);
+  const scoreTotal      = scoreCompletion + scoreAccuracy + exp.scoring.time;
+
+  // Keep snapshot ref up to date
+  snapshotRef.current = { currentData, timer, scoreTotal, currentSteps };
+
   // Trigger AI when data grows
   useEffect(() => {
     if (currentData.length >= 3) fetchAiInsight(currentData);
@@ -331,43 +275,6 @@ export default function LabSimulator() {
 
   const handleResumeFullscreen = () => { enterFullscreen(); setIsPaused(false); };
   const handleResumeFromTab    = () => { setTabWarning(false); setIsPaused(false); };
-
-  const scoreCompletion = Math.round((currentSteps.length / exp.procedure.length) * exp.scoring.completion);
-  const scoreAccuracy   = Math.round(exp.scoring.accuracy * 0.9);
-  const scoreTotal      = scoreCompletion + scoreAccuracy + exp.scoring.time;
-
-  // ────────────────────────────────────────────────────────────
-  // CAMERA PERMISSION SCREEN
-  // ────────────────────────────────────────────────────────────
-  if (setupPhase === 'camera' && cameraGranted === null) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#02060d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 24 }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-          style={{ background: '#080f1c', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '40px 48px', maxWidth: 460, textAlign: 'center' }}
-        >
-          <motion.div
-            animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 2 }}
-            style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(0,212,255,0.1)', border: '2px solid rgba(0,212,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}
-          >
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="1.8">
-              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-            </svg>
-          </motion.div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#EDEDF0', marginBottom: 10 }}>Camera Access Required</h2>
-          <p style={{ fontSize: 14, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>
-            This lab uses AI-powered proctoring. Please <strong style={{ color: '#00d4ff' }}>Allow</strong> camera access when your browser prompts you.
-          </p>
-          <p style={{ fontSize: 12, color: '#525870', lineHeight: 1.6 }}>No footage is recorded or stored. Camera is used for face presence and attention tracking only.</p>
-          <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}
-              style={{ width: 8, height: 8, borderRadius: '50%', background: '#00d4ff' }} />
-            <span style={{ fontSize: 13, color: '#00d4ff', fontWeight: 600 }}>Waiting for permission...</span>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   // ────────────────────────────────────────────────────────────
   // MAIN LAB UI
@@ -396,29 +303,35 @@ export default function LabSimulator() {
               </h2>
               <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>
                 {tabAutoSubmitting
-                  ? 'Too many tab switches detected. Your experiment will be discarded.'
+                  ? 'Too many tab switches detected. Your experiment will be automatically submitted.'
                   : 'You switched away from this window. Your experiment has been paused. Return to continue.'}
               </p>
               {tabAutoSubmitting ? (
                 <>
                   <div style={{ fontSize: 52, fontWeight: 800, color: '#DC2626', fontFamily: 'monospace', margin: '16px 0 4px' }}>{tabCountdown}</div>
-                  <p style={{ fontSize: 13, color: '#525870' }}>Discarding in {tabCountdown} second{tabCountdown !== 1 ? 's' : ''}</p>
+                  <p style={{ fontSize: 13, color: '#525870' }}>Submitting in {tabCountdown} second{tabCountdown !== 1 ? 's' : ''}</p>
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: '#525870' }}>
-                  Warning {tabViolationsRef.current} of {MAX_TAB_VIOLATIONS}. One more switch will discard the experiment.
+                  Warning {tabViolationsRef.current} of {MAX_TAB_VIOLATIONS}. One more switch will submit the experiment.
                 </p>
               )}
             </div>
             {!tabAutoSubmitting && (
-              <button onClick={handleResumeFromTab} style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+              <button
+                onClick={handleResumeFromTab}
+                style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
                 onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
                 onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
-              >Resume Experiment</button>
+              >
+                Resume Experiment
+              </button>
             )}
             {!tabAutoSubmitting && (
-              <button onClick={() => { if (exp) resetLabProgress(exp.id); exitFullscreenAPI(); navigate('/labs'); }}
-                style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+              <button
+                onClick={() => { if (exp) resetLabProgress(exp.id); exitFullscreenAPI(); navigate('/labs'); }}
+                style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+              >
                 Exit experiment (progress will be lost)
               </button>
             )}
@@ -444,11 +357,18 @@ export default function LabSimulator() {
               <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>You exited fullscreen. Re-enter fullscreen to continue your experiment.</p>
               <p style={{ fontSize: 13, color: '#525870' }}>Your progress is saved.</p>
             </div>
-            <button onClick={handleResumeFullscreen} style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+            <button
+              onClick={handleResumeFullscreen}
+              style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
               onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
               onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
-            >Return to Fullscreen</button>
-            <button onClick={() => { exitFullscreenAPI(); navigate('/labs'); }} style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+            >
+              Return to Fullscreen
+            </button>
+            <button
+              onClick={() => { exitFullscreenAPI(); navigate('/labs'); }}
+              style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+            >
               Exit experiment (progress will be lost)
             </button>
           </motion.div>
@@ -458,14 +378,17 @@ export default function LabSimulator() {
       {/* ── Top Bar ─────────────────────────────────────────── */}
       <header className="h-14 border-b border-gray-800 flex items-center justify-between px-6 bg-[#050d1a] z-50 shrink-0 shadow-md">
         <div className="flex items-center gap-4">
-          <Link to="/labs" onClick={() => { if (document.fullscreenElement) exitFullscreenAPI(); }} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+          <Link
+            to="/labs"
+            onClick={() => { if (document.fullscreenElement) exitFullscreenAPI(); }}
+            className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
           </Link>
           <h1 className="font-heading font-bold text-white text-lg">{exp.title}</h1>
           <span className="text-xs text-gray-400 border border-gray-700 bg-gray-900 px-2 py-1 rounded">{exp.ncert}</span>
         </div>
         <div className="flex items-center gap-4">
-          {/* Proctoring violation badge */}
           {tabViolationsRef.current > 0 && (
             <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '3px 10px', borderRadius: 999 }}>
               ⚠ {tabViolationsRef.current} tab switch{tabViolationsRef.current > 1 ? 'es' : ''}
@@ -479,7 +402,10 @@ export default function LabSimulator() {
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> {timer}s
           </div>
           {!isFullscreen && (
-            <button onClick={enterFullscreen} style={{ padding: '4px 12px', background: 'rgba(29,78,216,0.2)', border: '1px solid rgba(29,78,216,0.4)', color: '#93B4FF', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            <button
+              onClick={enterFullscreen}
+              style={{ padding: '4px 12px', background: 'rgba(29,78,216,0.2)', border: '1px solid rgba(29,78,216,0.4)', color: '#93B4FF', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
               Enter Fullscreen
             </button>
           )}
@@ -497,7 +423,10 @@ export default function LabSimulator() {
               <p className="text-sm text-gray-300 leading-relaxed bg-black/30 p-4 border border-white/5 rounded-lg">{exp.aim}</p>
             </div>
             <div className="border border-white/10 rounded-lg overflow-hidden">
-              <button onClick={() => setActiveAccordion(0)} className="w-full flex justify-between items-center p-4 bg-white/5 hover:bg-white/10 transition-colors text-sm font-bold uppercase tracking-wider text-gray-200">
+              <button
+                onClick={() => setActiveAccordion(0)}
+                className="w-full flex justify-between items-center p-4 bg-white/5 hover:bg-white/10 transition-colors text-sm font-bold uppercase tracking-wider text-gray-200"
+              >
                 Theory & Apparatus <span>{activeAccordion === 0 ? '-' : '+'}</span>
               </button>
               <AnimatePresence>
@@ -505,15 +434,24 @@ export default function LabSimulator() {
                   <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden bg-black/20">
                     <div className="p-4 text-sm text-gray-300 leading-relaxed border-t border-white/5 space-y-4">
                       <p>{exp.theory}</p>
-                      <div><strong className="text-accent-cyan">Apparatus List:</strong><ul className="list-disc pl-5 mt-2 opacity-80">{exp.apparatus.map((item: string) => <li key={item}>{item}</li>)}</ul></div>
-                      <div><strong className="text-yellow-500">Safety Notes:</strong><ul className="list-disc pl-5 mt-2 opacity-80 text-yellow-500/80">{exp.safetyNotes.map((item: string) => <li key={item}>{item}</li>)}</ul></div>
+                      <div>
+                        <strong className="text-accent-cyan">Apparatus List:</strong>
+                        <ul className="list-disc pl-5 mt-2 opacity-80">{exp.apparatus.map((item: string) => <li key={item}>{item}</li>)}</ul>
+                      </div>
+                      <div>
+                        <strong className="text-yellow-500">Safety Notes:</strong>
+                        <ul className="list-disc pl-5 mt-2 opacity-80 text-yellow-500/80">{exp.safetyNotes.map((item: string) => <li key={item}>{item}</li>)}</ul>
+                      </div>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
             <div className="border border-white/10 rounded-lg overflow-hidden shadow-[0_0_15px_rgba(0,212,255,0.05)]">
-              <button onClick={() => setActiveAccordion(1)} className="w-full flex justify-between items-center p-4 bg-accent-cyan/10 hover:bg-accent-cyan/20 border-b border-accent-cyan/20 transition-colors text-sm font-bold uppercase tracking-wider text-accent-cyan">
+              <button
+                onClick={() => setActiveAccordion(1)}
+                className="w-full flex justify-between items-center p-4 bg-accent-cyan/10 hover:bg-accent-cyan/20 border-b border-accent-cyan/20 transition-colors text-sm font-bold uppercase tracking-wider text-accent-cyan"
+              >
                 Procedure Steps <span>{activeAccordion === 1 ? '-' : '+'}</span>
               </button>
               <AnimatePresence>
@@ -529,10 +467,16 @@ export default function LabSimulator() {
                               <span className={`pt-1 leading-relaxed ${isComplete ? 'text-gray-200' : 'text-gray-400'}`}>{step}</span>
                             </div>
                             {!isComplete && (
-                              <button onClick={() => {
-                                if (idx > 0 && !currentSteps.includes(idx - 1)) { setValidationError("Step Skipped", "The scientific method requires following the procedural sequence exactly.", `Please complete step ${idx} before moving on to this step.`); return; }
-                                markStepComplete(exp.id, idx);
-                              }} className="mt-3 ml-9 text-xs px-3 py-1.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 transition-colors">
+                              <button
+                                onClick={() => {
+                                  if (idx > 0 && !currentSteps.includes(idx - 1)) {
+                                    setValidationError("Step Skipped", "The scientific method requires following the procedural sequence exactly.", `Please complete step ${idx} before moving on to this step.`);
+                                    return;
+                                  }
+                                  markStepComplete(exp.id, idx);
+                                }}
+                                className="mt-3 ml-9 text-xs px-3 py-1.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 transition-colors"
+                              >
                                 Mark Step Complete
                               </button>
                             )}
@@ -552,11 +496,20 @@ export default function LabSimulator() {
           <div className="flex-1 relative overflow-hidden bg-gradient-to-b from-[#0a1128] to-black border-b border-gray-800 flex items-center justify-center">
             <Suspense fallback={<div className="text-accent-cyan animate-pulse">Loading Apparatus...</div>}>
               {ApparatusComponent && !isPaused && !tabWarning && (
-                <ApparatusComponent varState={varState} setVarState={setVarState} addObservation={(data: any) => addObservation(exp.id, data)} />
+                <ApparatusComponent
+                  varState={varState}
+                  setVarState={setVarState}
+                  addObservation={(data: any) => addObservation(exp.id, data)}
+                />
               )}
             </Suspense>
             {!isPaused && !tabWarning && (
-              <button onClick={handleReset} className="absolute top-4 right-4 text-xs px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded transition-all z-50">Reset Apparatus</button>
+              <button
+                onClick={handleReset}
+                className="absolute top-4 right-4 text-xs px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded transition-all z-50"
+              >
+                Reset Apparatus
+              </button>
             )}
           </div>
           <div className="bg-[#050d1a] border-b border-gray-800 p-4 shrink-0 flex items-center justify-center gap-8 overflow-x-auto shadow-inner">
@@ -567,11 +520,23 @@ export default function LabSimulator() {
                   <span className="text-xs font-mono text-accent-cyan">{varState[v.id] ?? v.defaultValue} {v.unit}</span>
                 </div>
                 {v.options ? (
-                  <select value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, e.target.value)} className="w-full bg-black border border-gray-700 rounded text-sm px-2 py-1 outline-none focus:border-accent-cyan text-white" disabled={isPaused || tabWarning}>
+                  <select
+                    value={varState[v.id] ?? v.defaultValue}
+                    onChange={e => handleVariableChange(v.id, e.target.value)}
+                    className="w-full bg-black border border-gray-700 rounded text-sm px-2 py-1 outline-none focus:border-accent-cyan text-white"
+                    disabled={isPaused || tabWarning}
+                  >
                     {v.options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 ) : (
-                  <input type="range" min={v.min} max={v.max} step={v.step} value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, parseFloat(e.target.value))} className="w-full accent-accent-cyan" disabled={isPaused || tabWarning} />
+                  <input
+                    type="range"
+                    min={v.min} max={v.max} step={v.step}
+                    value={varState[v.id] ?? v.defaultValue}
+                    onChange={e => handleVariableChange(v.id, parseFloat(e.target.value))}
+                    className="w-full accent-accent-cyan"
+                    disabled={isPaused || tabWarning}
+                  />
                 )}
               </div>
             ))}
@@ -589,7 +554,11 @@ export default function LabSimulator() {
               <tbody>
                 <AnimatePresence>
                   {currentData.map((row: any, i: number) => (
-                    <motion.tr initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
+                    <motion.tr
+                      initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                      key={i}
+                      className="border-b border-gray-800 hover:bg-white/5 transition-colors"
+                    >
                       <td className="p-3 font-mono text-gray-500">{i + 1}</td>
                       {Object.values(row).map((val: any, j: number) => (
                         <td key={j} className="p-3 text-accent-cyan font-mono">{typeof val === 'number' ? val.toFixed(3) : val}</td>
@@ -605,51 +574,35 @@ export default function LabSimulator() {
         {/* Right Panel */}
         <div className="w-[28%] bg-[#050d1a] flex flex-col relative z-20">
 
-          {/* ── Camera tile ──────────────────────────────────── */}
-          <div style={{ padding: '12px 12px 0' }}>
-            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1px solid ${faceStatus === 'ok' ? 'rgba(5,150,105,0.5)' : faceStatus === 'missing' || faceStatus === 'lookaway' ? 'rgba(220,38,38,0.45)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.55)' : 'rgba(255,255,255,0.08)'}`, background: '#000', transition: 'border-color 0.3s' }}>
-              <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: 90, objectFit: 'cover', transform: 'scaleX(-1)', display: 'block' }} />
-              {/* Live dot */}
-              <div style={{ position: 'absolute', top: 5, left: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}
-                  style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />
-                <span style={{ fontSize: 9, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live</span>
-              </div>
-              {/* Face status overlay */}
-              {faceStatus !== 'checking' && (
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '3px 8px', fontSize: 10, fontWeight: 700, textAlign: 'center', background: faceStatus === 'ok' ? 'rgba(5,150,105,0.85)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.9)' : 'rgba(220,38,38,0.85)', color: '#fff' }}>
-                  {faceStatus === 'ok' ? '✓ Face detected' : faceStatus === 'missing' ? '⚠ No face' : faceStatus === 'lookaway' ? '⚠ Look at screen' : '⚠ Multiple faces'}
-                </div>
-              )}
-            </div>
-            {/* Camera warning */}
-            <AnimatePresence>
-              {camWarning && (
-                <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  style={{ marginTop: 6, padding: '5px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, lineHeight: 1.4, background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.25)', color: '#FCA5A5' }}>
-                  {camWarning}
-                </motion.div>
-              )}
-            </AnimatePresence>
-            {cameraGranted === false && (
-              <div style={{ marginTop: 6, padding: '5px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.25)', color: '#FCD34D' }}>
-                Camera denied — proctoring limited
-              </div>
-            )}
-          </div>
-
           {/* Chart */}
-          <div className="flex-1 border-b border-gray-800 p-4 flex flex-col" style={{ marginTop: 10 }}>
+          <div className="flex-1 border-b border-gray-800 p-4 flex flex-col">
             <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-2">{exp.chartLabel.title}</h3>
             <div className="flex-1 bg-black rounded-lg border border-gray-800 overflow-hidden relative shadow-inner">
               {currentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={currentData.map((d: any) => ({ x: d.x ?? d[Object.keys(d)[0]], y: d.y ?? d[Object.keys(d)[1]] }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="x" label={{ value: exp.chartLabel.x, position: 'insideBottom', offset: -5, fill: '#94a3b8', fontSize: 10 }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <YAxis label={{ value: exp.chartLabel.y, angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 10 }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <Tooltip contentStyle={{ background: '#0a1428', border: '1px solid #1e293b', borderRadius: 8 }} labelStyle={{ color: '#94a3b8' }} itemStyle={{ color: exp.subject === 'physics' ? '#00d4ff' : '#22c55e' }} />
-                    <Line type="monotone" dataKey="y" stroke={exp.subject === 'physics' ? '#00d4ff' : '#22c55e'} strokeWidth={2} dot={{ fill: exp.subject === 'physics' ? '#00d4ff' : '#22c55e', r: 4 }} activeDot={{ r: 6 }} />
+                    <XAxis
+                      dataKey="x"
+                      label={{ value: exp.chartLabel.x, position: 'insideBottom', offset: -5, fill: '#94a3b8', fontSize: 10 }}
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                    />
+                    <YAxis
+                      label={{ value: exp.chartLabel.y, angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 10 }}
+                      tick={{ fill: '#94a3b8', fontSize: 10 }}
+                    />
+                    <Tooltip
+                      contentStyle={{ background: '#0a1428', border: '1px solid #1e293b', borderRadius: 8 }}
+                      labelStyle={{ color: '#94a3b8' }}
+                      itemStyle={{ color: exp.subject === 'physics' ? '#00d4ff' : '#22c55e' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="y"
+                      stroke={exp.subject === 'physics' ? '#00d4ff' : '#22c55e'}
+                      strokeWidth={2}
+                      dot={{ fill: exp.subject === 'physics' ? '#00d4ff' : '#22c55e', r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -660,7 +613,11 @@ export default function LabSimulator() {
             </div>
 
             {/* AI Insight */}
-            <div style={{ marginTop: 12, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, padding: '10px 12px', transition: 'border-color 0.3s', ...(aiLoading ? { borderColor: 'rgba(124,58,237,0.5)' } : {}) }}>
+            <div style={{
+              marginTop: 12, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)',
+              borderRadius: 10, padding: '10px 12px', transition: 'border-color 0.3s',
+              ...(aiLoading ? { borderColor: 'rgba(124,58,237,0.5)' } : {}),
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span>✨</span> AI Data Insight
@@ -676,7 +633,11 @@ export default function LabSimulator() {
                 </div>
               ) : aiInsight ? (
                 <AnimatePresence mode="wait">
-                  <motion.p key={aiInsight.slice(0, 20)} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11, color: '#C4B5FD', lineHeight: 1.7, margin: 0 }}>
+                  <motion.p
+                    key={aiInsight.slice(0, 20)}
+                    initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                    style={{ fontSize: 11, color: '#C4B5FD', lineHeight: 1.7, margin: 0 }}
+                  >
                     {aiInsight}
                   </motion.p>
                 </AnimatePresence>
@@ -691,12 +652,20 @@ export default function LabSimulator() {
             <h3 className="text-sm font-bold text-white uppercase mb-4">Live Score Tracker</h3>
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between text-xs text-gray-400 mb-1"><span>Procedure Completion</span><span>{scoreCompletion} / {exp.scoring.completion}</span></div>
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><motion.div className="h-full bg-accent-cyan" initial={{ width: 0 }} animate={{ width: `${(scoreCompletion / exp.scoring.completion) * 100}%` }} /></div>
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Procedure Completion</span><span>{scoreCompletion} / {exp.scoring.completion}</span>
+                </div>
+                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <motion.div className="h-full bg-accent-cyan" initial={{ width: 0 }} animate={{ width: `${(scoreCompletion / exp.scoring.completion) * 100}%` }} />
+                </div>
               </div>
               <div>
-                <div className="flex justify-between text-xs text-gray-400 mb-1"><span>Accuracy</span><span>{scoreAccuracy} / {exp.scoring.accuracy}</span></div>
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden"><motion.div className="h-full bg-emerald-500" initial={{ width: 0 }} animate={{ width: `${(scoreAccuracy / exp.scoring.accuracy) * 100}%` }} /></div>
+                <div className="flex justify-between text-xs text-gray-400 mb-1">
+                  <span>Accuracy</span><span>{scoreAccuracy} / {exp.scoring.accuracy}</span>
+                </div>
+                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <motion.div className="h-full bg-emerald-500" initial={{ width: 0 }} animate={{ width: `${(scoreAccuracy / exp.scoring.accuracy) * 100}%` }} />
+                </div>
               </div>
             </div>
           </div>
@@ -709,21 +678,41 @@ export default function LabSimulator() {
           Progress: <span className="text-accent-cyan">{currentSteps.length} of {exp.procedure.length} Steps Completed</span>
         </div>
         <div className="flex items-center gap-4">
-          <button disabled={isPaused || tabWarning}
+          <button
+            disabled={isPaused || tabWarning}
             onClick={() => {
-              if (currentData.length === 0) { setValidationError('No Data to Save', 'You have not recorded any observations yet.', 'Record at least one observation before saving to your journal.'); return; }
-              saveToJournal({ experimentId: exp.id, lab: exp.title, date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), timeSeconds: timer, score: scoreTotal, observations: currentData, completedSteps: currentSteps });
+              if (currentData.length === 0) {
+                setValidationError('No Data to Save', 'You have not recorded any observations yet.', 'Record at least one observation before saving to your journal.');
+                return;
+              }
+              saveToJournal({
+                experimentId: exp.id,
+                lab: exp.title,
+                date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                timeSeconds: timer,
+                score: scoreTotal,
+                observations: currentData,
+                completedSteps: currentSteps,
+              });
               setValidationError('Saved to Journal ✓', 'Your observations have been recorded.', 'View them anytime in My Lab Journal.');
             }}
             className="px-4 py-2 border border-accent-cyan/50 text-accent-cyan bg-accent-cyan/10 hover:bg-accent-cyan/20 text-sm font-bold rounded transition-colors hidden lg:block disabled:opacity-40 disabled:cursor-not-allowed"
-          >Save to Journal</button>
-          <button disabled={isPaused || tabWarning}
+          >
+            Save to Journal
+          </button>
+          <button
+            disabled={isPaused || tabWarning}
             onClick={() => {
-              if (currentData.length < 3) { setValidationError("Incomplete Data", "You need more data points to establish a reliable relationship or pattern.", "A minimum of three observations must be recorded before you can submit your data."); return; }
+              if (currentData.length < 3) {
+                setValidationError("Incomplete Data", "You need more data points to establish a reliable relationship or pattern.", "A minimum of three observations must be recorded before you can submit your data.");
+                return;
+              }
               setShowResults(true);
             }}
             className="px-8 py-2 bg-accent-cyan hover:bg-[#00b3d6] text-black text-sm font-bold rounded shadow-[0_0_15px_rgba(0,212,255,0.4)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >Submit Experiment</button>
+          >
+            Submit Experiment
+          </button>
         </div>
       </div>
 
@@ -731,14 +720,21 @@ export default function LabSimulator() {
       <AnimatePresence>
         {showResults && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }} className="w-full max-w-md bg-[#0a1428] border border-gray-700 rounded-xl overflow-hidden shadow-2xl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-[#0a1428] border border-gray-700 rounded-xl overflow-hidden shadow-2xl"
+            >
               <div className="p-6 border-b border-gray-800 flex flex-col items-center">
-                <div className="w-24 h-24 rounded-full border-4 border-accent-cyan bg-accent-cyan/10 flex items-center justify-center text-4xl font-bold font-heading text-white shadow-[0_0_30px_rgba(0,212,255,0.3)] mb-4">{scoreTotal}</div>
+                <div className="w-24 h-24 rounded-full border-4 border-accent-cyan bg-accent-cyan/10 flex items-center justify-center text-4xl font-bold font-heading text-white shadow-[0_0_30px_rgba(0,212,255,0.3)] mb-4">
+                  {scoreTotal}
+                </div>
                 <h2 className="text-xl font-heading font-bold text-white uppercase">Experiment Complete</h2>
                 <p className="text-sm text-gray-400">Your lab report has been automatically scored.</p>
                 {tabViolationsRef.current > 0 && (
-                  <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '4px 12px', borderRadius: 999 }}>
-                    {tabViolationsRef.current} tab switch violation{tabViolationsRef.current > 1 ? 's' : ''} recorded
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '4px 12px', borderRadius: 999 }}>
+                      {tabViolationsRef.current} tab switch{tabViolationsRef.current > 1 ? 'es' : ''} recorded
+                    </div>
                   </div>
                 )}
               </div>
@@ -756,8 +752,18 @@ export default function LabSimulator() {
                 <div className="flex justify-between text-sm text-gray-300"><span>Time Efficiency:</span><span className="font-mono text-yellow-400">+{exp.scoring.time} pts</span></div>
               </div>
               <div className="p-4 border-t border-gray-800 flex gap-4">
-                <button onClick={() => { setShowResults(false); handleReset(); exitFullscreenAPI(); }} className="flex-1 py-2 rounded text-sm font-bold bg-white/5 hover:bg-white/10 text-gray-300 transition-colors">Try Again</button>
-                <button onClick={() => { exitFullscreenAPI(); navigate('/labs'); }} className="flex-1 py-2 rounded text-sm font-bold bg-accent-violet hover:bg-[#6b21a8] text-white shadow-[0_0_15px_rgba(124,58,237,0.4)] transition-colors">Next Lab</button>
+                <button
+                  onClick={() => { setShowResults(false); handleReset(); exitFullscreenAPI(); }}
+                  className="flex-1 py-2 rounded text-sm font-bold bg-white/5 hover:bg-white/10 text-gray-300 transition-colors"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => { exitFullscreenAPI(); navigate('/labs'); }}
+                  className="flex-1 py-2 rounded text-sm font-bold bg-accent-violet hover:bg-[#6b21a8] text-white shadow-[0_0_15px_rgba(124,58,237,0.4)] transition-colors"
+                >
+                  Next Lab
+                </button>
               </div>
             </motion.div>
           </div>
