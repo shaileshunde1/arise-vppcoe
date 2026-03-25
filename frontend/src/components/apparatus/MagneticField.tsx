@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useLabStore } from '../../store/useLabStore';
 import gsap from 'gsap';
 
@@ -19,23 +19,29 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
   const { setValidationError } = useLabStore();
   const compassRef   = useRef<SVGGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const compassGroupRef = useRef<SVGGElement>(null); // wraps the whole compass for translate
   const linesRef     = useRef<SVGGElement>(null);
 
-  // FIX 1: Start compass at centre of canvas, at same height as magnet (y=260)
-  // so it immediately reads a real field value, not some off-canvas default.
-  const [compassPos, setCompassPos] = useState({ x: 350, y: 160 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [compassAngle, setCompassAngle] = useState(0);
-  const [fieldStrength, setFieldStrength] = useState(0);
-  // FIX 2: track whether the compass has actually been moved by the user
-  const [compassMoved, setCompassMoved] = useState(false);
+  // ALL compass state lives in refs — React state is never used for position.
+  // This means addObservation() re-renders CANNOT reset the compass.
+  const compassPosRef    = useRef({ x: 350, y: 160 });
+  const compassAngleRef  = useRef(0);
+  const fieldStrengthRef = useRef(0);
+  const compassMovedRef  = useRef(false);
+  const isDraggingRef    = useRef(false);
 
-  // Pole positions — N pole is red (+1), S pole is blue (-1)
+  // DOM refs for telemetry display — updated directly, no React state
+  const telemetryBRef    = useRef<HTMLSpanElement>(null);
+  const telemetryAngRef  = useRef<HTMLSpanElement>(null);
+  const hintRef          = useRef<SVGTextElement>(null);
+  const hintMovedRef     = useRef<SVGTextElement>(null);
+  const statusRef        = useRef<HTMLSpanElement>(null);
+
   const getPoles = useCallback((m: number) => {
     if (m === 0) {
       return [
-        { x: 350 + MAG_HALF, y: 260, q: +1 }, // N (right)
-        { x: 350 - MAG_HALF, y: 260, q: -1 }, // S (left)
+        { x: 350 + MAG_HALF, y: 260, q: +1 },
+        { x: 350 - MAG_HALF, y: 260, q: -1 },
       ];
     } else if (m === 1) {
       return [
@@ -71,23 +77,83 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
     return { B: B_total, angle };
   }, [getPoles]);
 
-  // FIX 3: Recompute field whenever compassPos, mode, OR poleStrength changes.
-  // Previously this worked but the distance in recordObservation was wrong — fixed below.
-  useEffect(() => {
-    const f = calculateField(compassPos.x, compassPos.y, mode, poleStrength);
-    setCompassAngle(f.angle);
-    setFieldStrength(f.B);
+  // Move compass SVG group directly via DOM — no React state involved
+  const updateCompassDOM = useCallback((x: number, y: number, angle: number, B: number) => {
+    if (compassGroupRef.current) {
+      compassGroupRef.current.setAttribute('transform', `translate(${x}, ${y})`);
+    }
     if (compassRef.current) {
       gsap.to(compassRef.current, {
-        rotation: f.angle,
+        rotation: angle,
         transformOrigin: 'center center',
         duration: 0.3,
         ease: 'power2.out',
       });
     }
-  }, [compassPos, mode, poleStrength, calculateField]);
+    if (telemetryBRef.current)   telemetryBRef.current.textContent   = `B: ${B.toFixed(3)} μT`;
+    if (telemetryAngRef.current) telemetryAngRef.current.textContent = `θ: ${angle.toFixed(1)}°`;
+  }, []);
 
-  // Animate field lines
+  const toSVGCoords = (e: React.PointerEvent) => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) / rect.width)  * VB_W,
+      y: ((e.clientY - rect.top)  / rect.height) * VB_H,
+    };
+  };
+
+  const updateCompass = useCallback((e: React.PointerEvent) => {
+    const pos = toSVGCoords(e);
+    if (!pos) return;
+    const margin = 30;
+    const x = Math.max(margin, Math.min(VB_W - margin, pos.x));
+    const y = Math.max(margin, Math.min(VB_H - margin, pos.y));
+    if (pos.x !== x || pos.y !== y) {
+      setValidationError('Out of Bounds', 'Compass is outside the field area.', 'Keep it within the simulation boundary.');
+    }
+
+    const f = calculateField(x, y, mode, poleStrength);
+    compassPosRef.current   = { x, y };
+    compassAngleRef.current = f.angle;
+    fieldStrengthRef.current = f.B;
+
+    if (!compassMovedRef.current) {
+      compassMovedRef.current = true;
+      if (hintRef.current)      hintRef.current.style.display      = 'none';
+      if (hintMovedRef.current) hintMovedRef.current.style.display = 'block';
+      if (statusRef.current) {
+        statusRef.current.textContent = '✓ Reading from compass position';
+        statusRef.current.style.color = '#4ade80';
+      }
+    }
+
+    updateCompassDOM(x, y, f.angle, f.B);
+  }, [mode, poleStrength, calculateField, setValidationError, updateCompassDOM]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    isDraggingRef.current = true;
+    updateCompass(e);
+  }, [updateCompass]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (isDraggingRef.current) updateCompass(e);
+  }, [updateCompass]);
+
+  const handlePointerUp = useCallback(() => {
+    isDraggingRef.current = false;
+  }, []);
+
+  // Recalculate field when mode/strength changes (but do NOT reset position)
+  useEffect(() => {
+    const pos = compassPosRef.current;
+    const f = calculateField(pos.x, pos.y, mode, poleStrength);
+    compassAngleRef.current  = f.angle;
+    fieldStrengthRef.current = f.B;
+    updateCompassDOM(pos.x, pos.y, f.angle, f.B);
+  }, [mode, poleStrength, calculateField, updateCompassDOM]);
+
+  // Field line animation
   useEffect(() => {
     const flowSpeed = Math.max(0.8, 3.5 - (poleStrength / 10) * 2.5);
     const ctx = gsap.context(() => {
@@ -101,38 +167,8 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
     return () => ctx.revert();
   }, [mode, poleStrength]);
 
-  const toSVGCoords = (e: React.PointerEvent) => {
-    if (!containerRef.current) return null;
-    const rect = containerRef.current.getBoundingClientRect();
-    return {
-      x: ((e.clientX - rect.left) / rect.width)  * VB_W,
-      y: ((e.clientY - rect.top)  / rect.height) * VB_H,
-    };
-  };
-
-  const updateCompass = (e: React.PointerEvent) => {
-    const pos = toSVGCoords(e);
-    if (!pos) return;
-    const margin = 30;
-    const x = Math.max(margin, Math.min(VB_W - margin, pos.x));
-    const y = Math.max(margin, Math.min(VB_H - margin, pos.y));
-    if (pos.x !== x || pos.y !== y) {
-      setValidationError('Out of Bounds', 'Compass is outside the field area.', 'Keep it within the simulation boundary.');
-    }
-    setCompassPos({ x, y });
-    setCompassMoved(true); // FIX 2: mark that the user actually moved the compass
-  };
-
-  const handlePointerDown = (e: React.PointerEvent) => { setIsDragging(true); updateCompass(e); };
-  const handlePointerMove = (e: React.PointerEvent) => { if (isDragging) updateCompass(e); };
-  const handlePointerUp   = () => setIsDragging(false);
-
-  // FIX 4: Record observation correctly.
-  // - Removed the hasAdjustedSlider gate — the relevant action here IS placing the compass.
-  // - Distance is now computed from the NEAREST pole, not a hardcoded magnet centre.
-  // - All readings come from the live compassPos/compassAngle/fieldStrength state.
-  const recordObservation = () => {
-    if (!compassMoved) {
+  const recordObservation = useCallback(() => {
+    if (!compassMovedRef.current) {
       setValidationError(
         'Compass Not Placed',
         'Drag the compass to a position near the magnet first.',
@@ -141,30 +177,42 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
       return;
     }
 
-    // Find closest pole to the current compass position
+    const pos   = compassPosRef.current;
+    const angle = compassAngleRef.current;
+    const B     = fieldStrengthRef.current;
+
     const poles = getPoles(mode);
     let minDist = Infinity;
     let nearestPoleLabel = '';
     poles.forEach(pole => {
-      const d = Math.sqrt(Math.pow(compassPos.x - pole.x, 2) + Math.pow(compassPos.y - pole.y, 2));
+      const d = Math.sqrt(Math.pow(pos.x - pole.x, 2) + Math.pow(pos.y - pole.y, 2));
       if (d < minDist) {
         minDist = d;
         nearestPoleLabel = pole.q === +1 ? 'N' : 'S';
       }
     });
 
-    // Convert SVG-px distance to a relative cm scale (1 px ≈ 0.05 cm at this scale)
     const distCm = (minDist * 0.05).toFixed(2);
+
+    // Snapshot the position for the log before calling addObservation
+    const snapshot = { x: pos.x, y: pos.y };
 
     addObservation({
       'Distance from nearest pole (cm)': distCm,
       'Nearest Pole': nearestPoleLabel,
-      'Field Strength (μT)': fieldStrength.toFixed(3),
-      'Compass Angle (°)': compassAngle.toFixed(1),
+      'Field Strength (μT)': B.toFixed(3),
+      'Compass Angle (°)': angle.toFixed(1),
       'Mode': mode === 0 ? 'Single magnet' : mode === 1 ? 'Unlike poles (attract)' : 'Like poles (repel)',
       'Pole Strength Setting': poleStrength,
     });
-  };
+
+    // After addObservation (which may trigger parent re-render), re-assert compass DOM position
+    // using rAF so it runs after React's reconciliation paint
+    requestAnimationFrame(() => {
+      const f = calculateField(snapshot.x, snapshot.y, mode, poleStrength);
+      updateCompassDOM(snapshot.x, snapshot.y, f.angle, f.B);
+    });
+  }, [addObservation, getPoles, mode, poleStrength, setValidationError, calculateField, updateCompassDOM]);
 
   const lineOpacity = 0.4 + (poleStrength / 10) * 0.45;
   const lineWidth   = 1 + (poleStrength / 10) * 1.5;
@@ -180,15 +228,12 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
 
   const renderLines = () => {
     const arcs: JSX.Element[] = [];
-
     if (mode === 0) {
       const offsets = [35, 70, 110, 160, 220, 290];
       offsets.forEach((h, i) => {
         arcs.push(
-          <path key={`u${i}`} {...lineProps}
-            d={`M 280 260 C 280 ${260 - h}, 420 ${260 - h}, 420 260`} />,
-          <path key={`d${i}`} {...lineProps}
-            d={`M 280 260 C 280 ${260 + h}, 420 ${260 + h}, 420 260`} />
+          <path key={`u${i}`} {...lineProps} d={`M 280 260 C 280 ${260 - h}, 420 ${260 - h}, 420 260`} />,
+          <path key={`d${i}`} {...lineProps} d={`M 280 260 C 280 ${260 + h}, 420 ${260 + h}, 420 260`} />
         );
       });
       arcs.push(<line key="centre" {...lineProps} x1="280" y1="260" x2="420" y2="260" />);
@@ -253,9 +298,7 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
             <text x={-MAG_HALF / 2} y="6" fill="white" fontWeight="800" fontSize="18" textAnchor="middle">S</text>
             <text x={ MAG_HALF / 2} y="6" fill="white" fontWeight="800" fontSize="18" textAnchor="middle">N</text>
           </g>
-          <text x="350" y="230" fill="#22c55e" fontSize="13" textAnchor="middle" fontWeight="600">
-            ← Unlike poles attract →
-          </text>
+          <text x="350" y="230" fill="#22c55e" fontSize="13" textAnchor="middle" fontWeight="600">← Unlike poles attract →</text>
         </g>
       );
     }
@@ -274,9 +317,7 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
           <text x={-MAG_HALF / 2} y="6" fill="white" fontWeight="800" fontSize="18" textAnchor="middle">N</text>
           <text x={ MAG_HALF / 2} y="6" fill="white" fontWeight="800" fontSize="18" textAnchor="middle">S</text>
         </g>
-        <text x="350" y="230" fill="#f87171" fontSize="13" textAnchor="middle" fontWeight="600">
-          → Like poles repel ←
-        </text>
+        <text x="350" y="230" fill="#f87171" fontSize="13" textAnchor="middle" fontWeight="600">→ Like poles repel ←</text>
       </g>
     );
   };
@@ -289,14 +330,17 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
-      style={{ cursor: isDragging ? 'grabbing' : 'crosshair' }}
+      style={{ cursor: isDraggingRef.current ? 'grabbing' : 'crosshair' }}
     >
-      {/* Telemetry */}
-      <div className="absolute top-4 left-4 z-10 pointer-events-none bg-black/60 border border-gray-700 px-4 py-2 rounded">
+      {/* Telemetry — updated via DOM refs, not React state */}
+      <div className="absolute top-4 left-4 z-10 bg-black/60 border border-gray-700 px-4 py-2 rounded"
+        onPointerDown={e => e.stopPropagation()}
+        onPointerMove={e => e.stopPropagation()}
+      >
         <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Compass Telemetry</div>
         <div className="font-mono text-sm text-cyan-400 flex flex-col gap-1">
-          <span>B: {fieldStrength.toFixed(3)} μT</span>
-          <span>θ: {compassAngle.toFixed(1)}°</span>
+          <span ref={telemetryBRef}>B: 0.000 μT</span>
+          <span ref={telemetryAngRef}>θ: 0.0°</span>
           <span className="text-gray-500 text-[10px]">
             {mode === 0 ? 'Single magnet' : mode === 1 ? 'Unlike poles (attract)' : 'Like poles (repel)'}
           </span>
@@ -311,8 +355,8 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
         <g ref={linesRef}>{renderLines()}</g>
         {renderMagnets()}
 
-        {/* Compass */}
-        <g transform={`translate(${compassPos.x}, ${compassPos.y})`}>
+        {/* Compass — position controlled entirely via compassGroupRef, never via React state */}
+        <g ref={compassGroupRef} transform={`translate(${compassPosRef.current.x}, ${compassPosRef.current.y})`}>
           <circle cx="0" cy="0" r="26"
             fill="rgba(255,255,255,0.07)"
             stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" />
@@ -328,19 +372,17 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
             <polygon points="0,20 4,2 0,6 -4,2"  fill="#e2e8f0" />
             <circle cx="0" cy="0" r="3.5" fill="#94a3b8" />
           </g>
-        </g>
 
-        {/* FIX 5: Show a pulsing "drag me" hint until the compass has been moved */}
-        {!compassMoved && (
-          <text x={compassPos.x} y={compassPos.y + 42} textAnchor="middle"
+          {/* Hints rendered inside compass group so they follow it */}
+          <text ref={hintRef} x="0" y="42" textAnchor="middle"
             fill="rgba(250,204,21,0.7)" fontSize="11" fontWeight="bold">
             ← drag to explore →
           </text>
-        )}
-        {compassMoved && (
-          <text x={compassPos.x} y={compassPos.y + 38} textAnchor="middle"
-            fill="rgba(255,255,255,0.25)" fontSize="10">drag</text>
-        )}
+          <text ref={hintMovedRef} x="0" y="38" textAnchor="middle"
+            fill="rgba(255,255,255,0.25)" fontSize="10" style={{ display: 'none' }}>
+            drag
+          </text>
+        </g>
 
         <text x={VB_W / 2} y={VB_H - 18} textAnchor="middle"
           fill="rgba(255,255,255,0.2)" fontSize="11">
@@ -349,7 +391,11 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
       </svg>
 
       {/* Record button */}
-      <div className="absolute top-4 right-4 bg-black/80 px-4 py-3 border border-gray-700 rounded z-20">
+      <div className="absolute top-4 right-4 bg-black/80 px-4 py-3 border border-gray-700 rounded z-20"
+        onPointerDown={e => e.stopPropagation()}
+        onPointerMove={e => e.stopPropagation()}
+        onPointerUp={e => e.stopPropagation()}
+      >
         <button onClick={recordObservation}
           className="w-full px-6 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold transition-colors">
           Log Field Reading
@@ -357,12 +403,8 @@ export default function MagneticField({ varState, addObservation }: ApparatusPro
         <div className="text-xs text-gray-500 mt-2 text-center">
           Red needle tip → points away from S pole
         </div>
-        {/* FIX 6: Show clear status so user knows what will be recorded */}
         <div className="text-xs text-center mt-1">
-          {compassMoved
-            ? <span className="text-green-400">✓ Reading from compass position</span>
-            : <span className="text-yellow-400">Move compass first</span>
-          }
+          <span ref={statusRef} style={{ color: '#facc15' }}>Move compass first</span>
         </div>
       </div>
     </div>

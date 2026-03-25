@@ -6,35 +6,59 @@ import { experiments } from '../data/experiments';
 import { useLabStore } from '../store/useLabStore';
 
 const apparatusMap: Record<string, React.LazyExoticComponent<React.ComponentType<any>>> = {
-  'simple-pendulum': lazy(() => import('../components/apparatus/SimplePendulum')),
-  'ohms-law': lazy(() => import('../components/apparatus/OhmsLaw')),
-  'projectile-motion': lazy(() => import('../components/apparatus/ProjectileMotion')),
-  'prism-refraction': lazy(() => import('../components/apparatus/PrismRefraction')),
-  'magnetic-field': lazy(() => import('../components/apparatus/MagneticField')),
-  'acid-base-titration': lazy(() => import('../components/apparatus/AcidBaseTitration')),
-  'electrolysis-water': lazy(() => import('../components/apparatus/ElectrolysisWater')),
-  'flame-test': lazy(() => import('../components/apparatus/FlameTest')),
-  'le-chatelier': lazy(() => import('../components/apparatus/LeChatelier')),
-  'paper-chromatography': lazy(() => import('../components/apparatus/PaperChromatography'))
+  'simple-pendulum':      lazy(() => import('../components/apparatus/SimplePendulum')),
+  'ohms-law':             lazy(() => import('../components/apparatus/OhmsLaw')),
+  'projectile-motion':    lazy(() => import('../components/apparatus/ProjectileMotion')),
+  'prism-refraction':     lazy(() => import('../components/apparatus/PrismRefraction')),
+  'magnetic-field':       lazy(() => import('../components/apparatus/MagneticField')),
+  'acid-base-titration':  lazy(() => import('../components/apparatus/AcidBaseTitration')),
+  'electrolysis-water':   lazy(() => import('../components/apparatus/ElectrolysisWater')),
+  'flame-test':           lazy(() => import('../components/apparatus/FlameTest')),
+  'le-chatelier':         lazy(() => import('../components/apparatus/LeChatelier')),
+  'paper-chromatography': lazy(() => import('../components/apparatus/PaperChromatography')),
 };
 
-// Build a specific prompt for each experiment
+// ── Proctoring constants ─────────────────────────────────────
+const MAX_TAB_VIOLATIONS = 2;   // auto-discard after 2nd tab switch
+const NO_FACE_THRESHOLD  = 4;   // consecutive 2-s polls with no face → warn
+const LOOK_AWAY_THRESHOLD = 3;
+const FACE_POLL_MS       = 2000;
+
+type FaceStatus = 'checking' | 'ok' | 'missing' | 'multiple' | 'lookaway';
+
+async function detectFaceStatus(detector: any, video: HTMLVideoElement): Promise<FaceStatus> {
+  try {
+    const faces: any[] = await detector.detect(video);
+    if (faces.length === 0) return 'missing';
+    if (faces.length > 1)  return 'multiple';
+    const box   = faces[0].boundingBox;
+    const vidW  = video.videoWidth  || 320;
+    const vidH  = video.videoHeight || 240;
+    const offX  = Math.abs((box.x + box.width  / 2) - vidW / 2) / vidW;
+    const offY  = Math.abs((box.y + box.height / 2) - vidH / 2) / vidH;
+    if (offX > 0.40 || offY > 0.42) return 'lookaway';
+    return 'ok';
+  } catch {
+    return 'ok';
+  }
+}
+
 function buildInsightPrompt(expTitle: string, expId: string, data: any[]): string {
   const dataStr = data.map((d, i) =>
     `Point ${i + 1}: ${Object.entries(d).map(([k, v]) => `${k}=${typeof v === 'number' ? (v as number).toFixed(3) : v}`).join(', ')}`
   ).join('\n');
 
   const context: Record<string, string> = {
-    'simple-pendulum': 'This is a Simple Pendulum experiment. The student is measuring the relationship between pendulum length and time period. Expected: T = 2π√(L/g), so T² should be proportional to L.',
-    'ohms-law': "This is Ohm's Law experiment. The student is measuring voltage (V) vs current (I). Expected: a linear relationship V = IR where the slope gives resistance R.",
-    'projectile-motion': 'This is a Projectile Motion experiment. The student is measuring range vs launch angle. Expected: maximum range at 45°, symmetric distribution.',
-    'prism-refraction': "This is a Prism Refraction experiment. The student is measuring angle of incidence vs angle of refraction. Expected: Snell's law n₁sinθ₁ = n₂sinθ₂.",
-    'magnetic-field': 'This is a Magnetic Field experiment. The student is measuring field strength vs distance from a wire carrying current.',
-    'acid-base-titration': 'This is an Acid-Base Titration experiment. The student is recording pH vs volume of titrant added. Expected: S-curve with sharp inflection at equivalence point.',
-    'electrolysis-water': 'This is an Electrolysis of Water experiment. The student is measuring gas volume vs time/current. Expected: H₂:O₂ ratio should be 2:1.',
-    'flame-test': 'This is a Flame Test experiment. The student is recording characteristic flame colors for different metal ions.',
-    'le-chatelier': "This is a Le Chatelier's Principle experiment. The student is observing equilibrium shifts under different conditions.",
-    'paper-chromatography': 'This is a Paper Chromatography experiment. The student is recording Rf values for different compounds.',
+    'simple-pendulum':      'Simple Pendulum: T = 2π√(L/g), T² ∝ L.',
+    'ohms-law':             "Ohm's Law: linear V vs I, slope = resistance R.",
+    'projectile-motion':    'Projectile Motion: max range at 45°.',
+    'prism-refraction':     "Prism Refraction: Snell's law n₁sinθ₁ = n₂sinθ₂.",
+    'magnetic-field':       'Magnetic Field: field strength vs distance from wire.',
+    'acid-base-titration':  'Acid-Base Titration: S-curve pH vs titrant volume.',
+    'electrolysis-water':   'Electrolysis: H₂:O₂ volume ratio should be 2:1.',
+    'flame-test':           'Flame Test: characteristic colours for metal ions.',
+    'le-chatelier':         "Le Chatelier: equilibrium shifts under stress.",
+    'paper-chromatography': 'Paper Chromatography: Rf values for compounds.',
   };
 
   return `You are an AI science tutor analyzing a student's lab experiment data in real time.
@@ -55,27 +79,128 @@ Do NOT use markdown formatting, bullet points, or headers. Just plain conversati
 
 export default function LabSimulator() {
   const { experimentId } = useParams();
-  const navigate = useNavigate();
-  const exp = experiments.find(e => e.id === experimentId);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const navigate         = useNavigate();
+  const exp              = experiments.find(e => e.id === experimentId);
+  const containerRef     = useRef<HTMLDivElement>(null);
 
-  const { observationData, completedSteps, markStepComplete, addObservation, resetLabProgress, setHasAdjustedSlider, setValidationError, saveToJournal } = useLabStore();
+  const {
+    observationData, completedSteps, markStepComplete, addObservation,
+    resetLabProgress, setHasAdjustedSlider, setValidationError, saveToJournal,
+  } = useLabStore();
 
   const [activeAccordion, setActiveAccordion] = useState<number>(1);
-  const [timer, setTimer] = useState(0);
-  const [showResults, setShowResults] = useState(false);
-  const [varState, setVarState] = useState<Record<string, number | string>>({});
+  const [timer,           setTimer]           = useState(0);
+  const [showResults,     setShowResults]     = useState(false);
+  const [varState,        setVarState]        = useState<Record<string, number | string>>({});
 
-  // AI Insight state
-  const [aiInsight, setAiInsight] = useState<string>('');
-  const [aiLoading, setAiLoading] = useState(false);
+  // AI Insight
+  const [aiInsight,  setAiInsight]  = useState<string>('');
+  const [aiLoading,  setAiLoading]  = useState(false);
   const lastAnalyzedCount = useRef(0);
 
-  // Fullscreen state
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [fsRequested, setFsRequested] = useState(false);
+  // ── Setup phase: camera first ────────────────────────────────
+  const [setupPhase,    setSetupPhase]    = useState<'camera' | 'ready'>('camera');
+  const [cameraGranted, setCameraGranted] = useState<boolean | null>(null);
 
+  // ── Fullscreen ───────────────────────────────────────────────
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPaused,     setIsPaused]     = useState(false);  // fullscreen-exit pause
+  const [fsRequested,  setFsRequested]  = useState(false);
+
+  // ── Tab-switch ───────────────────────────────────────────────
+  const tabViolationsRef    = useRef(0);
+  const [tabWarning,        setTabWarning]        = useState(false);
+  const [tabCountdown,      setTabCountdown]       = useState(10);
+  const [tabAutoSubmitting, setTabAutoSubmitting]  = useState(false);
+  const tabAutoSubmitRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Camera / face detection ──────────────────────────────────
+  const videoRef         = useRef<HTMLVideoElement>(null);
+  const streamRef        = useRef<MediaStream | null>(null);
+  const faceDetectorRef  = useRef<any>(null);
+  const faceIntervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [faceStatus,     setFaceStatus]  = useState<FaceStatus>('checking');
+  const noFaceCountRef   = useRef(0);
+  const lookAwayCountRef = useRef(0);
+  const [camWarning,     setCamWarning]  = useState<string | null>(null);
+
+  // ────────────────────────────────────────────────────────────
+  // STEP 1: Camera permission FIRST
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!exp) { navigate('/labs'); return; }
+    // Init variable defaults
+    const initialVars: Record<string, number | string> = {};
+    exp.variables.forEach(v => { initialVars[v.id] = v.defaultValue; });
+    setVarState(initialVars);
+
+    let mounted = true;
+    const requestCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        if (mounted) setCameraGranted(true);
+      } catch {
+        if (mounted) setCameraGranted(false);
+      }
+    };
+    requestCamera();
+    return () => { mounted = false; };
+  }, [exp, navigate]);
+
+  // STEP 2: After camera resolves → enter fullscreen
+  useEffect(() => {
+    if (cameraGranted === null) return;
+    const t = setTimeout(() => {
+      enterFullscreen();
+      setFsRequested(true);
+      setSetupPhase('ready');
+    }, 400);
+    return () => clearTimeout(t);
+  }, [cameraGranted]);
+
+  // ────────────────────────────────────────────────────────────
+  // Face detection loop
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (cameraGranted !== true || setupPhase !== 'ready') return;
+    if (!('FaceDetector' in window)) { setFaceStatus('ok'); return; }
+
+    faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true });
+
+    faceIntervalRef.current = setInterval(async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2 || showResults) return;
+      const status = await detectFaceStatus(faceDetectorRef.current, videoRef.current);
+      setFaceStatus(status);
+
+      if (status === 'missing') {
+        noFaceCountRef.current   += 1;
+        lookAwayCountRef.current  = 0;
+        if (noFaceCountRef.current === NO_FACE_THRESHOLD)
+          setCamWarning('⚠ Face not detected. Please stay in front of the camera.');
+      } else if (status === 'lookaway') {
+        noFaceCountRef.current    = 0;
+        lookAwayCountRef.current += 1;
+        if (lookAwayCountRef.current === LOOK_AWAY_THRESHOLD)
+          setCamWarning('⚠ Please keep your attention on the screen.');
+      } else if (status === 'multiple') {
+        noFaceCountRef.current   = 0;
+        lookAwayCountRef.current = 0;
+        setCamWarning('⚠ Multiple faces detected!');
+      } else {
+        noFaceCountRef.current   = 0;
+        lookAwayCountRef.current = 0;
+        if (camWarning) setCamWarning(null);
+      }
+    }, FACE_POLL_MS);
+
+    return () => { if (faceIntervalRef.current) clearInterval(faceIntervalRef.current); };
+  }, [cameraGranted, setupPhase, showResults]);
+
+  // ────────────────────────────────────────────────────────────
+  // Fullscreen helpers
+  // ────────────────────────────────────────────────────────────
   const enterFullscreen = () => {
     const el = containerRef.current || document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen();
@@ -91,61 +216,87 @@ export default function LabSimulator() {
     const handleFsChange = () => {
       const inFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(inFs);
-      if (!inFs && fsRequested) setIsPaused(true);
+      if (!inFs && fsRequested && setupPhase === 'ready') setIsPaused(true);
     };
-    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('fullscreenchange',       handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
     return () => {
-      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('fullscreenchange',       handleFsChange);
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
-  }, [fsRequested]);
+  }, [fsRequested, setupPhase]);
 
-  useEffect(() => {
-    if (!exp) { navigate('/labs'); return; }
-    const initialVars: Record<string, number | string> = {};
-    exp.variables.forEach(v => { initialVars[v.id] = v.defaultValue; });
-    setVarState(initialVars);
-    const t = setTimeout(() => { enterFullscreen(); setFsRequested(true); }, 500);
-    return () => clearTimeout(t);
-  }, [exp, navigate]);
+  // ────────────────────────────────────────────────────────────
+  // Alt-tab detection
+  // ────────────────────────────────────────────────────────────
+ useEffect(() => {
+  const handleBlur = () => {
+    if (showResults || setupPhase !== 'ready') return;
+    setIsPaused(true);
+    tabViolationsRef.current += 1;
+    if (tabViolationsRef.current >= MAX_TAB_VIOLATIONS) {
+      setTabWarning(true);
+      setTabAutoSubmitting(true);
+      setTabCountdown(10);
+      if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
+      tabAutoSubmitRef.current = setInterval(() => {
+        setTabCountdown(prev => {
+          if (prev <= 1) { clearInterval(tabAutoSubmitRef.current!); if (exp) resetLabProgress(exp.id); exitFullscreenAPI(); navigate('/labs'); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setTabWarning(true);
+    }
+  };
+  const handleFocus = () => {
+    if (tabViolationsRef.current < MAX_TAB_VIOLATIONS) {
+      setTabWarning(false);
+      setIsPaused(false);
+    }
+  };
+  window.addEventListener('blur', handleBlur);
+  window.addEventListener('focus', handleFocus);
+  return () => { window.removeEventListener('blur', handleBlur); window.removeEventListener('focus', handleFocus); };
+}, [showResults, setupPhase, exp, navigate, resetLabProgress]);
+  // Cleanup
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    if (faceIntervalRef.current)  clearInterval(faceIntervalRef.current);
+    if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
+    if (document.fullscreenElement) exitFullscreenAPI();
+  }, []);
 
+  // ────────────────────────────────────────────────────────────
+  // Timer (pauses when isPaused or tabWarning)
+  // ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isPaused || showResults) return;
+    if (isPaused || tabWarning || showResults || setupPhase !== 'ready') return;
     const interval = setInterval(() => setTimer(t => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [isPaused, showResults]);
+  }, [isPaused, tabWarning, showResults, setupPhase]);
 
-  useEffect(() => { return () => { if (document.fullscreenElement) exitFullscreenAPI(); }; }, []);
-
-  // ── AI Insight — auto-triggers at 3+ observations ────────────
+  // ────────────────────────────────────────────────────────────
+  // AI Insight
+  // ────────────────────────────────────────────────────────────
   const fetchAiInsight = useCallback(async (data: any[]) => {
     if (!exp || data.length < 3 || aiLoading) return;
-    // Only re-analyze when count increases by 2 or more (avoid calling on every single point)
     if (data.length < lastAnalyzedCount.current + 2 && lastAnalyzedCount.current > 0) return;
-
     setAiLoading(true);
     lastAnalyzedCount.current = data.length;
-
     try {
-      const prompt = buildInsightPrompt(exp.title, exp.id, data);
-
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: 'user', content: buildInsightPrompt(exp.title, exp.id, data) }],
         }),
       });
-
       const result = await response.json();
-      if (result.content && result.content[0]?.text) {
-        setAiInsight(result.content[0].text);
-      }
-    } catch (err) {
-      console.error('AI insight error:', err);
+      if (result.content?.[0]?.text) setAiInsight(result.content[0].text);
+    } catch {
       setAiInsight('Unable to analyze data at this time. Continue recording observations.');
     } finally {
       setAiLoading(false);
@@ -154,15 +305,13 @@ export default function LabSimulator() {
 
   if (!exp) return null;
 
-  const currentData = observationData[exp.id] || [];
-  const currentSteps = completedSteps[exp.id] || [];
+  const currentData  = observationData[exp.id] || [];
+  const currentSteps = completedSteps[exp.id]  || [];
   const ApparatusComponent = apparatusMap[exp.id];
 
-  // Trigger AI analysis when data updates
+  // Trigger AI when data grows
   useEffect(() => {
-    if (currentData.length >= 3) {
-      fetchAiInsight(currentData);
-    }
+    if (currentData.length >= 3) fetchAiInsight(currentData);
   }, [currentData.length]);
 
   const handleVariableChange = (id: string, value: number | string) => {
@@ -176,44 +325,137 @@ export default function LabSimulator() {
     setAiInsight('');
     lastAnalyzedCount.current = 0;
     const initialVars: Record<string, number | string> = {};
-    exp.variables.forEach(v => initialVars[v.id] = v.defaultValue);
+    exp.variables.forEach(v => { initialVars[v.id] = v.defaultValue; });
     setVarState(initialVars);
   };
 
   const handleResumeFullscreen = () => { enterFullscreen(); setIsPaused(false); };
+  const handleResumeFromTab    = () => { setTabWarning(false); setIsPaused(false); };
 
   const scoreCompletion = Math.round((currentSteps.length / exp.procedure.length) * exp.scoring.completion);
-  const scoreAccuracy = Math.round(exp.scoring.accuracy * 0.9);
-  const scoreTotal = scoreCompletion + scoreAccuracy + exp.scoring.time;
+  const scoreAccuracy   = Math.round(exp.scoring.accuracy * 0.9);
+  const scoreTotal      = scoreCompletion + scoreAccuracy + exp.scoring.time;
 
+  // ────────────────────────────────────────────────────────────
+  // CAMERA PERMISSION SCREEN
+  // ────────────────────────────────────────────────────────────
+  if (setupPhase === 'camera' && cameraGranted === null) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#02060d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 24 }}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+          style={{ background: '#080f1c', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '40px 48px', maxWidth: 460, textAlign: 'center' }}
+        >
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 2 }}
+            style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(0,212,255,0.1)', border: '2px solid rgba(0,212,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="1.8">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+          </motion.div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#EDEDF0', marginBottom: 10 }}>Camera Access Required</h2>
+          <p style={{ fontSize: 14, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>
+            This lab uses AI-powered proctoring. Please <strong style={{ color: '#00d4ff' }}>Allow</strong> camera access when your browser prompts you.
+          </p>
+          <p style={{ fontSize: 12, color: '#525870', lineHeight: 1.6 }}>No footage is recorded or stored. Camera is used for face presence and attention tracking only.</p>
+          <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}
+              style={{ width: 8, height: 8, borderRadius: '50%', background: '#00d4ff' }} />
+            <span style={{ fontSize: 13, color: '#00d4ff', fontWeight: 600 }}>Waiting for permission...</span>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────
+  // MAIN LAB UI
+  // ────────────────────────────────────────────────────────────
   return (
     <div ref={containerRef} className="h-screen w-screen bg-[#02060d] text-gray-200 flex flex-col font-sans overflow-hidden" style={{ position: 'relative' }}>
 
-      {/* Fullscreen paused overlay */}
-      {isPaused && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 200, background: 'rgba(2, 6, 13, 0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
-          <div style={{ textAlign: 'center', maxWidth: 400 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>Experiment Paused</h2>
-            <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>You exited fullscreen mode. This experiment requires fullscreen to maintain academic integrity.</p>
-            <p style={{ fontSize: 13, color: '#525870' }}>Your progress has been saved. Re-enter fullscreen to continue.</p>
-          </div>
-          <button onClick={handleResumeFullscreen} style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
-          >Return to Fullscreen</button>
-          <button onClick={() => { exitFullscreenAPI(); navigate('/labs'); }} style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
-            Exit experiment (progress will be lost)
-          </button>
-        </div>
-      )}
+      {/* ── Tab-switch warning overlay ──────────────────────── */}
+      <AnimatePresence>
+        {tabWarning && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'absolute', inset: 0, zIndex: 250, background: 'rgba(2,6,13,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}
+          >
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+              </svg>
+            </div>
+            <div style={{ textAlign: 'center', maxWidth: 400 }}>
+              <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.15)', padding: '3px 12px', borderRadius: 999, marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Tab Switch #{tabViolationsRef.current}
+              </div>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>
+                {tabAutoSubmitting ? '⚠ Final Warning — Experiment Ending' : 'Window Switch Detected'}
+              </h2>
+              <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>
+                {tabAutoSubmitting
+                  ? 'Too many tab switches detected. Your experiment will be discarded.'
+                  : 'You switched away from this window. Your experiment has been paused. Return to continue.'}
+              </p>
+              {tabAutoSubmitting ? (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: '#DC2626', fontFamily: 'monospace', margin: '16px 0 4px' }}>{tabCountdown}</div>
+                  <p style={{ fontSize: 13, color: '#525870' }}>Discarding in {tabCountdown} second{tabCountdown !== 1 ? 's' : ''}</p>
+                </>
+              ) : (
+                <p style={{ fontSize: 13, color: '#525870' }}>
+                  Warning {tabViolationsRef.current} of {MAX_TAB_VIOLATIONS}. One more switch will discard the experiment.
+                </p>
+              )}
+            </div>
+            {!tabAutoSubmitting && (
+              <button onClick={handleResumeFromTab} style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
+              >Resume Experiment</button>
+            )}
+            {!tabAutoSubmitting && (
+              <button onClick={() => { if (exp) resetLabProgress(exp.id); exitFullscreenAPI(); navigate('/labs'); }}
+                style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+                Exit experiment (progress will be lost)
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Top Bar */}
+      {/* ── Fullscreen-exit paused overlay ──────────────────── */}
+      <AnimatePresence>
+        {isPaused && !tabWarning && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'absolute', inset: 0, zIndex: 200, background: 'rgba(2,6,13,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}
+          >
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div style={{ textAlign: 'center', maxWidth: 400 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>Experiment Paused</h2>
+              <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 6 }}>You exited fullscreen. Re-enter fullscreen to continue your experiment.</p>
+              <p style={{ fontSize: 13, color: '#525870' }}>Your progress is saved.</p>
+            </div>
+            <button onClick={handleResumeFullscreen} style={{ padding: '13px 32px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
+            >Return to Fullscreen</button>
+            <button onClick={() => { exitFullscreenAPI(); navigate('/labs'); }} style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+              Exit experiment (progress will be lost)
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Top Bar ─────────────────────────────────────────── */}
       <header className="h-14 border-b border-gray-800 flex items-center justify-between px-6 bg-[#050d1a] z-50 shrink-0 shadow-md">
         <div className="flex items-center gap-4">
           <Link to="/labs" onClick={() => { if (document.fullscreenElement) exitFullscreenAPI(); }} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
@@ -223,6 +465,12 @@ export default function LabSimulator() {
           <span className="text-xs text-gray-400 border border-gray-700 bg-gray-900 px-2 py-1 rounded">{exp.ncert}</span>
         </div>
         <div className="flex items-center gap-4">
+          {/* Proctoring violation badge */}
+          {tabViolationsRef.current > 0 && (
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '3px 10px', borderRadius: 999 }}>
+              ⚠ {tabViolationsRef.current} tab switch{tabViolationsRef.current > 1 ? 'es' : ''}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: isFullscreen ? '#059669' : '#DC2626' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: isFullscreen ? '#059669' : '#DC2626', display: 'inline-block' }}></span>
             {isFullscreen ? 'Fullscreen' : 'Not Fullscreen'}
@@ -238,7 +486,7 @@ export default function LabSimulator() {
         </div>
       </header>
 
-      {/* Main Layout */}
+      {/* ── Main Layout ─────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* Left Panel */}
@@ -257,8 +505,8 @@ export default function LabSimulator() {
                   <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden bg-black/20">
                     <div className="p-4 text-sm text-gray-300 leading-relaxed border-t border-white/5 space-y-4">
                       <p>{exp.theory}</p>
-                      <div><strong className="text-accent-cyan">Apparatus List:</strong><ul className="list-disc pl-5 mt-2 opacity-80">{exp.apparatus.map(item => <li key={item}>{item}</li>)}</ul></div>
-                      <div><strong className="text-yellow-500">Safety Notes:</strong><ul className="list-disc pl-5 mt-2 opacity-80 text-yellow-500/80">{exp.safetyNotes.map(item => <li key={item}>{item}</li>)}</ul></div>
+                      <div><strong className="text-accent-cyan">Apparatus List:</strong><ul className="list-disc pl-5 mt-2 opacity-80">{exp.apparatus.map((item: string) => <li key={item}>{item}</li>)}</ul></div>
+                      <div><strong className="text-yellow-500">Safety Notes:</strong><ul className="list-disc pl-5 mt-2 opacity-80 text-yellow-500/80">{exp.safetyNotes.map((item: string) => <li key={item}>{item}</li>)}</ul></div>
                     </div>
                   </motion.div>
                 )}
@@ -272,7 +520,7 @@ export default function LabSimulator() {
                 {activeAccordion === 1 && (
                   <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden bg-[#0a1428]">
                     <div className="p-4 space-y-3">
-                      {exp.procedure.map((step, idx) => {
+                      {exp.procedure.map((step: string, idx: number) => {
                         const isComplete = currentSteps.includes(idx);
                         return (
                           <div key={idx} className={`p-3 rounded-lg border transition-all ${isComplete ? 'border-accent-cyan/50 bg-accent-cyan/10' : 'border-white/10 bg-black/40'}`}>
@@ -300,30 +548,30 @@ export default function LabSimulator() {
         </div>
 
         {/* Center Panel */}
-        <div className="w-[48%] flex flex-col bg-black relative z-10 border-r border-gray-800">
+        <div className="w-[44%] flex flex-col bg-black relative z-10 border-r border-gray-800">
           <div className="flex-1 relative overflow-hidden bg-gradient-to-b from-[#0a1128] to-black border-b border-gray-800 flex items-center justify-center">
             <Suspense fallback={<div className="text-accent-cyan animate-pulse">Loading Apparatus...</div>}>
-              {ApparatusComponent && !isPaused && (
+              {ApparatusComponent && !isPaused && !tabWarning && (
                 <ApparatusComponent varState={varState} setVarState={setVarState} addObservation={(data: any) => addObservation(exp.id, data)} />
               )}
             </Suspense>
-            {!isPaused && (
+            {!isPaused && !tabWarning && (
               <button onClick={handleReset} className="absolute top-4 right-4 text-xs px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded transition-all z-50">Reset Apparatus</button>
             )}
           </div>
           <div className="bg-[#050d1a] border-b border-gray-800 p-4 shrink-0 flex items-center justify-center gap-8 overflow-x-auto shadow-inner">
-            {exp.variables.map(v => (
+            {exp.variables.map((v: any) => (
               <div key={v.id} className="min-w-[140px] flex flex-col gap-2">
                 <div className="flex justify-between items-center">
                   <label className="text-xs text-gray-400 font-bold uppercase tracking-wider">{v.name}</label>
                   <span className="text-xs font-mono text-accent-cyan">{varState[v.id] ?? v.defaultValue} {v.unit}</span>
                 </div>
                 {v.options ? (
-                  <select value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, e.target.value)} className="w-full bg-black border border-gray-700 rounded text-sm px-2 py-1 outline-none focus:border-accent-cyan text-white" disabled={isPaused}>
-                    {v.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  <select value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, e.target.value)} className="w-full bg-black border border-gray-700 rounded text-sm px-2 py-1 outline-none focus:border-accent-cyan text-white" disabled={isPaused || tabWarning}>
+                    {v.options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 ) : (
-                  <input type="range" min={v.min} max={v.max} step={v.step} value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, parseFloat(e.target.value))} className="w-full accent-accent-cyan" disabled={isPaused} />
+                  <input type="range" min={v.min} max={v.max} step={v.step} value={varState[v.id] ?? v.defaultValue} onChange={e => handleVariableChange(v.id, parseFloat(e.target.value))} className="w-full accent-accent-cyan" disabled={isPaused || tabWarning} />
                 )}
               </div>
             ))}
@@ -340,10 +588,10 @@ export default function LabSimulator() {
               </thead>
               <tbody>
                 <AnimatePresence>
-                  {currentData.map((row, i) => (
+                  {currentData.map((row: any, i: number) => (
                     <motion.tr initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} key={i} className="border-b border-gray-800 hover:bg-white/5 transition-colors">
                       <td className="p-3 font-mono text-gray-500">{i + 1}</td>
-                      {Object.values(row).map((val: any, j) => (
+                      {Object.values(row).map((val: any, j: number) => (
                         <td key={j} className="p-3 text-accent-cyan font-mono">{typeof val === 'number' ? val.toFixed(3) : val}</td>
                       ))}
                     </motion.tr>
@@ -355,13 +603,48 @@ export default function LabSimulator() {
         </div>
 
         {/* Right Panel */}
-        <div className="w-[24%] bg-[#050d1a] flex flex-col relative z-20">
-          <div className="flex-1 border-b border-gray-800 p-4 flex flex-col">
+        <div className="w-[28%] bg-[#050d1a] flex flex-col relative z-20">
+
+          {/* ── Camera tile ──────────────────────────────────── */}
+          <div style={{ padding: '12px 12px 0' }}>
+            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1px solid ${faceStatus === 'ok' ? 'rgba(5,150,105,0.5)' : faceStatus === 'missing' || faceStatus === 'lookaway' ? 'rgba(220,38,38,0.45)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.55)' : 'rgba(255,255,255,0.08)'}`, background: '#000', transition: 'border-color 0.3s' }}>
+              <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: 90, objectFit: 'cover', transform: 'scaleX(-1)', display: 'block' }} />
+              {/* Live dot */}
+              <div style={{ position: 'absolute', top: 5, left: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live</span>
+              </div>
+              {/* Face status overlay */}
+              {faceStatus !== 'checking' && (
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '3px 8px', fontSize: 10, fontWeight: 700, textAlign: 'center', background: faceStatus === 'ok' ? 'rgba(5,150,105,0.85)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.9)' : 'rgba(220,38,38,0.85)', color: '#fff' }}>
+                  {faceStatus === 'ok' ? '✓ Face detected' : faceStatus === 'missing' ? '⚠ No face' : faceStatus === 'lookaway' ? '⚠ Look at screen' : '⚠ Multiple faces'}
+                </div>
+              )}
+            </div>
+            {/* Camera warning */}
+            <AnimatePresence>
+              {camWarning && (
+                <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  style={{ marginTop: 6, padding: '5px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, lineHeight: 1.4, background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.25)', color: '#FCA5A5' }}>
+                  {camWarning}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {cameraGranted === false && (
+              <div style={{ marginTop: 6, padding: '5px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.25)', color: '#FCD34D' }}>
+                Camera denied — proctoring limited
+              </div>
+            )}
+          </div>
+
+          {/* Chart */}
+          <div className="flex-1 border-b border-gray-800 p-4 flex flex-col" style={{ marginTop: 10 }}>
             <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-2">{exp.chartLabel.title}</h3>
             <div className="flex-1 bg-black rounded-lg border border-gray-800 overflow-hidden relative shadow-inner">
               {currentData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={currentData.map(d => ({ x: d.x ?? d[Object.keys(d)[0]], y: d.y ?? d[Object.keys(d)[1]] }))}>
+                  <LineChart data={currentData.map((d: any) => ({ x: d.x ?? d[Object.keys(d)[0]], y: d.y ?? d[Object.keys(d)[1]] }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="x" label={{ value: exp.chartLabel.x, position: 'insideBottom', offset: -5, fill: '#94a3b8', fontSize: 10 }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
                     <YAxis label={{ value: exp.chartLabel.y, angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 10 }} tick={{ fill: '#94a3b8', fontSize: 10 }} />
@@ -376,56 +659,29 @@ export default function LabSimulator() {
               )}
             </div>
 
-            {/* ── AI Insight Box ──────────────────────────────── */}
-            <div style={{
-              marginTop: 12,
-              background: 'rgba(124,58,237,0.08)',
-              border: '1px solid rgba(124,58,237,0.25)',
-              borderRadius: 10, padding: '10px 12px',
-              transition: 'border-color 0.3s',
-              ...(aiLoading ? { borderColor: 'rgba(124,58,237,0.5)' } : {}),
-            }}>
+            {/* AI Insight */}
+            <div style={{ marginTop: 12, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, padding: '10px 12px', transition: 'border-color 0.3s', ...(aiLoading ? { borderColor: 'rgba(124,58,237,0.5)' } : {}) }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span>✨</span> AI Data Insight
                 </div>
-                {currentData.length >= 3 && (
-                  <span style={{ fontSize: 9, color: '#6D28D9', fontWeight: 600 }}>
-                    {currentData.length} pts
-                  </span>
-                )}
+                {currentData.length >= 3 && <span style={{ fontSize: 9, color: '#6D28D9', fontWeight: 600 }}>{currentData.length} pts</span>}
               </div>
-
               {currentData.length < 3 ? (
-                <p style={{ fontSize: 11, color: '#6D5C8A', lineHeight: 1.6, margin: 0 }}>
-                  Record at least 3 observations to unlock AI analysis of your data.
-                </p>
+                <p style={{ fontSize: 11, color: '#6D5C8A', lineHeight: 1.6, margin: 0 }}>Record at least 3 observations to unlock AI analysis of your data.</p>
               ) : aiLoading ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{
-                    width: 12, height: 12, borderRadius: '50%',
-                    border: '2px solid #7C3AED', borderTopColor: 'transparent',
-                    animation: 'spin 0.8s linear infinite', flexShrink: 0,
-                  }}></div>
-                  <p style={{ fontSize: 11, color: '#8B5CF6', lineHeight: 1.6, margin: 0 }}>
-                    Analyzing your data...
-                  </p>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #7C3AED', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', flexShrink: 0 }}></div>
+                  <p style={{ fontSize: 11, color: '#8B5CF6', lineHeight: 1.6, margin: 0 }}>Analyzing your data...</p>
                 </div>
               ) : aiInsight ? (
                 <AnimatePresence mode="wait">
-                  <motion.p
-                    key={aiInsight.slice(0, 20)}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{ fontSize: 11, color: '#C4B5FD', lineHeight: 1.7, margin: 0 }}
-                  >
+                  <motion.p key={aiInsight.slice(0, 20)} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} style={{ fontSize: 11, color: '#C4B5FD', lineHeight: 1.7, margin: 0 }}>
                     {aiInsight}
                   </motion.p>
                 </AnimatePresence>
               ) : (
-                <p style={{ fontSize: 11, color: '#6D5C8A', lineHeight: 1.6, margin: 0 }}>
-                  Preparing analysis...
-                </p>
+                <p style={{ fontSize: 11, color: '#6D5C8A', lineHeight: 1.6, margin: 0 }}>Preparing analysis...</p>
               )}
             </div>
           </div>
@@ -447,13 +703,13 @@ export default function LabSimulator() {
         </div>
       </div>
 
-      {/* Bottom Bar */}
+      {/* ── Bottom Bar ──────────────────────────────────────── */}
       <div className="h-16 border-t border-gray-800 bg-[#050d1a] shadow-[0_-10px_20px_rgba(0,0,0,0.5)] flex items-center justify-between px-6 z-50 shrink-0 relative">
         <div className="flex items-center gap-4 text-sm font-bold text-gray-300">
           Progress: <span className="text-accent-cyan">{currentSteps.length} of {exp.procedure.length} Steps Completed</span>
         </div>
         <div className="flex items-center gap-4">
-          <button disabled={isPaused}
+          <button disabled={isPaused || tabWarning}
             onClick={() => {
               if (currentData.length === 0) { setValidationError('No Data to Save', 'You have not recorded any observations yet.', 'Record at least one observation before saving to your journal.'); return; }
               saveToJournal({ experimentId: exp.id, lab: exp.title, date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), timeSeconds: timer, score: scoreTotal, observations: currentData, completedSteps: currentSteps });
@@ -461,7 +717,7 @@ export default function LabSimulator() {
             }}
             className="px-4 py-2 border border-accent-cyan/50 text-accent-cyan bg-accent-cyan/10 hover:bg-accent-cyan/20 text-sm font-bold rounded transition-colors hidden lg:block disabled:opacity-40 disabled:cursor-not-allowed"
           >Save to Journal</button>
-          <button disabled={isPaused}
+          <button disabled={isPaused || tabWarning}
             onClick={() => {
               if (currentData.length < 3) { setValidationError("Incomplete Data", "You need more data points to establish a reliable relationship or pattern.", "A minimum of three observations must be recorded before you can submit your data."); return; }
               setShowResults(true);
@@ -471,7 +727,7 @@ export default function LabSimulator() {
         </div>
       </div>
 
-      {/* Results Modal */}
+      {/* ── Results Modal ────────────────────────────────────── */}
       <AnimatePresence>
         {showResults && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -480,8 +736,12 @@ export default function LabSimulator() {
                 <div className="w-24 h-24 rounded-full border-4 border-accent-cyan bg-accent-cyan/10 flex items-center justify-center text-4xl font-bold font-heading text-white shadow-[0_0_30px_rgba(0,212,255,0.3)] mb-4">{scoreTotal}</div>
                 <h2 className="text-xl font-heading font-bold text-white uppercase">Experiment Complete</h2>
                 <p className="text-sm text-gray-400">Your lab report has been automatically scored.</p>
+                {tabViolationsRef.current > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '4px 12px', borderRadius: 999 }}>
+                    {tabViolationsRef.current} tab switch violation{tabViolationsRef.current > 1 ? 's' : ''} recorded
+                  </div>
+                )}
               </div>
-              {/* Show AI insight in results if available */}
               {aiInsight && (
                 <div className="px-6 pt-4 pb-0">
                   <div style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, padding: '10px 14px' }}>
@@ -504,7 +764,6 @@ export default function LabSimulator() {
         )}
       </AnimatePresence>
 
-      {/* Spin animation for loading */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

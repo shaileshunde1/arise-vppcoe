@@ -29,35 +29,174 @@ const LAB_NAMES: Record<string, string> = {
   'paper-chromatography': 'Paper Chromatography', 'projectile-motion': 'Projectile Motion',
 };
 
+// ── Proctoring constants ──────────────────────────────────────
+const MAX_FS_VIOLATIONS   = 2;   // auto-submit after 2nd fullscreen exit
+const MAX_TAB_VIOLATIONS  = 2;   // auto-submit after 2nd tab switch
+const NO_FACE_THRESHOLD   = 4;   // consecutive 2-s polls with no face → warn
+const LOOK_AWAY_THRESHOLD = 3;   // consecutive polls looking away → warn
+const FACE_POLL_MS        = 2000;
+
 type AnswerState = 'unanswered' | 'correct' | 'wrong';
-type FSWarning = 'none' | 'first' | 'second';
+type FSWarning   = 'none' | 'first' | 'second';
+type FaceStatus  = 'checking' | 'ok' | 'missing' | 'multiple' | 'lookaway';
+
+// ── Lightweight look-away heuristic via eye landmark bounding box ──
+// We use FaceDetector (Chrome 123+). If unavailable, graceful fallback.
+async function detectFaceStatus(
+  detector: any,
+  video: HTMLVideoElement
+): Promise<FaceStatus> {
+  try {
+    const faces: any[] = await detector.detect(video);
+    if (faces.length === 0)  return 'missing';
+    if (faces.length > 1)    return 'multiple';
+
+    // Look-away heuristic: check if the face bounding box is heavily off-center
+    // A fully centred face would have boundingBox.x ≈ (video.width - box.width) / 2
+    const box   = faces[0].boundingBox;
+    const vidW  = video.videoWidth  || 320;
+    const vidH  = video.videoHeight || 240;
+    const centerX = box.x + box.width  / 2;
+    const centerY = box.y + box.height / 2;
+    const offX = Math.abs(centerX - vidW / 2) / vidW;  // 0–0.5
+    const offY = Math.abs(centerY - vidH / 2) / vidH;
+
+    // If face centroid is >40% away from centre in either axis → looking away
+    if (offX > 0.40 || offY > 0.42) return 'lookaway';
+    return 'ok';
+  } catch {
+    return 'ok'; // fail safe
+  }
+}
 
 export default function DiagnosticQuiz() {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
   const { theme } = useTheme();
-  const dark = theme === 'dark';
+  const dark      = theme === 'dark';
 
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<number[]>([]);
+  // ── Quiz state ──────────────────────────────────────────────
+  const [currentIdx,     setCurrentIdx]     = useState(0);
+  const [answers,        setAnswers]         = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [answerState, setAnswerState] = useState<AnswerState>('unanswered');
-  const [timeLeft, setTimeLeft] = useState(30);
-  const [timerActive, setTimerActive] = useState(true);
-  const [isFinished, setIsFinished] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [answerState,    setAnswerState]     = useState<AnswerState>('unanswered');
+  const [timeLeft,       setTimeLeft]        = useState(30);
+  const [timerActive,    setTimerActive]     = useState(false); // starts false until ready
+  const [isFinished,     setIsFinished]      = useState(false);
+  const [saving,         setSaving]          = useState(false);
 
-  // Fullscreen state
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fsWarning, setFsWarning] = useState<FSWarning>('none');
-  const [fsRequested, setFsRequested] = useState(false);
-  const [autoSubmitCountdown, setAutoSubmitCountdown] = useState(10);
-  const autoSubmitRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fsViolationsRef = useRef(0);
+  // ── Setup phase ─────────────────────────────────────────────
+  // camera → fullscreen → quiz starts
+  const [setupPhase, setSetupPhase] = useState<'camera' | 'ready'>('camera');
+  const [cameraGranted, setCameraGranted] = useState<boolean | null>(null); // null = pending
+
+  // ── Fullscreen state ─────────────────────────────────────────
+  const [isFullscreen,        setIsFullscreen]        = useState(false);
+  const [fsWarning,           setFsWarning]            = useState<FSWarning>('none');
+  const [fsRequested,         setFsRequested]          = useState(false);
+  const [autoSubmitCountdown, setAutoSubmitCountdown]  = useState(10);
+  const autoSubmitRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fsViolationsRef  = useRef(0);
+
+  // ── Tab-switch state ─────────────────────────────────────────
   const tabViolationsRef = useRef(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedRef = useRef(false); // prevent double-save
+  const [tabWarningVisible, setTabWarningVisible] = useState(false);
+  const [tabCountdown,      setTabCountdown]       = useState(10);
+  const tabAutoSubmitRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Camera / face detection ──────────────────────────────────
+  const videoRef          = useRef<HTMLVideoElement>(null);
+  const streamRef         = useRef<MediaStream | null>(null);
+  const faceDetectorRef   = useRef<any>(null);
+  const faceIntervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [faceStatus,      setFaceStatus]      = useState<FaceStatus>('checking');
+  const noFaceCountRef    = useRef(0);
+  const lookAwayCountRef  = useRef(0);
+  const [camWarning,      setCamWarning]       = useState<string | null>(null);
+
+  // ── Misc refs ────────────────────────────────────────────────
+  const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedRef       = useRef(false);
+
+  // ────────────────────────────────────────────────────────────
+  // STEP 1: Request camera FIRST — fullscreen comes AFTER
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let mounted = true;
+    const requestCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        if (mounted) setCameraGranted(true);
+      } catch {
+        if (mounted) setCameraGranted(false); // denied — continue anyway
+      }
+    };
+    requestCamera();
+    return () => { mounted = false; };
+  }, []);
+
+  
+  // ────────────────────────────────────────────────────────────
+  // Face detection loop (starts once camera is ready)
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (cameraGranted !== true) return;
+    if (!('FaceDetector' in window)) {
+      setFaceStatus('ok'); // unsupported browser — don't penalise
+      return;
+    }
+
+    faceDetectorRef.current = new (window as any).FaceDetector({ fastMode: true });
+
+    faceIntervalRef.current = setInterval(async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2 || isFinished) return;
+
+      const status = await detectFaceStatus(faceDetectorRef.current, videoRef.current);
+      setFaceStatus(status);
+
+      if (status === 'missing') {
+        noFaceCountRef.current   += 1;
+        lookAwayCountRef.current  = 0;
+        if (noFaceCountRef.current === NO_FACE_THRESHOLD) {
+          setCamWarning('⚠ Face not detected. Please stay in front of the camera.');
+        }
+        if (noFaceCountRef.current >= NO_FACE_THRESHOLD + 3) {
+          // Persistent absence → treat as violation
+          triggerFsViolation();
+          noFaceCountRef.current = 0;
+        }
+      } else if (status === 'lookaway') {
+        noFaceCountRef.current    = 0;
+        lookAwayCountRef.current += 1;
+        if (lookAwayCountRef.current === LOOK_AWAY_THRESHOLD) {
+          setCamWarning('⚠ Please look at the screen while answering.');
+        }
+        if (lookAwayCountRef.current >= LOOK_AWAY_THRESHOLD + 2) {
+          triggerFsViolation();
+          lookAwayCountRef.current = 0;
+        }
+      } else if (status === 'multiple') {
+        noFaceCountRef.current    = 0;
+        lookAwayCountRef.current  = 0;
+        setCamWarning('⚠ Multiple faces detected! Only the student should be visible.');
+        triggerFsViolation();
+      } else {
+        // ok
+        noFaceCountRef.current    = 0;
+        lookAwayCountRef.current  = 0;
+        if (camWarning) setCamWarning(null);
+      }
+    }, FACE_POLL_MS);
+
+    return () => {
+      if (faceIntervalRef.current) clearInterval(faceIntervalRef.current);
+    };
+  }, [cameraGranted, isFinished]);
+
+  // ────────────────────────────────────────────────────────────
+  // Fullscreen helpers
+  // ────────────────────────────────────────────────────────────
   const enterFullscreen = () => {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen();
@@ -69,69 +208,109 @@ export default function DiagnosticQuiz() {
     else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
   };
 
+  // Central violation handler (shared by FS exits + camera events)
+  const triggerFsViolation = useCallback(() => {
+    if (isFinished) return;
+    fsViolationsRef.current += 1;
+
+    if (fsViolationsRef.current >= MAX_FS_VIOLATIONS) {
+      // Final violation → start auto-submit countdown
+      setFsWarning('second');
+      setAutoSubmitCountdown(10);
+      if (autoSubmitRef.current) clearInterval(autoSubmitRef.current);
+      autoSubmitRef.current = setInterval(() => {
+        setAutoSubmitCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(autoSubmitRef.current!);
+            setIsFinished(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setFsWarning('first');
+    }
+  }, [isFinished]);
+
   useEffect(() => {
     const handleFsChange = () => {
       const inFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
       setIsFullscreen(inFs);
-      if (!inFs && fsRequested && !isFinished) {
-        fsViolationsRef.current += 1;
-        if (fsViolationsRef.current === 1) {
-          setFsWarning('first');
-        } else {
-          setFsWarning('second');
-          setAutoSubmitCountdown(10);
-          autoSubmitRef.current = setInterval(() => {
-            setAutoSubmitCountdown(prev => {
-              if (prev <= 1) { clearInterval(autoSubmitRef.current!); setIsFinished(true); return 0; }
-              return prev - 1;
-            });
-          }, 1000);
-        }
+      // Only count as violation if we requested FS, quiz is live, and student exited
+      if (!inFs && fsRequested && !isFinished && setupPhase === 'ready') {
+        triggerFsViolation();
       }
     };
-    document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('fullscreenchange',       handleFsChange);
     document.addEventListener('webkitfullscreenchange', handleFsChange);
     return () => {
-      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('fullscreenchange',       handleFsChange);
       document.removeEventListener('webkitfullscreenchange', handleFsChange);
     };
-  }, [fsRequested, isFinished]);
+  }, [fsRequested, isFinished, setupPhase, triggerFsViolation]);
 
-  useEffect(() => {
-    const t = setTimeout(() => { enterFullscreen(); setFsRequested(true); }, 500);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => { return () => { if (autoSubmitRef.current) clearInterval(autoSubmitRef.current); }; }, []);
-  useEffect(() => { return () => { if (document.fullscreenElement) exitFullscreenAPI(); }; }, []);
-
-  const handleReturnToFullscreen = () => {
-    enterFullscreen();
-    if (autoSubmitRef.current) clearInterval(autoSubmitRef.current);
-    setFsWarning('none');
-  };
-
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    if (navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then(s => { stream = s; if (videoRef.current) videoRef.current.srcObject = s; })
-        .catch(err => console.warn('Camera denied:', err));
+  // ────────────────────────────────────────────────────────────
+  // Alt-tab / window switch detection
+  // ────────────────────────────────────────────────────────────
+ useEffect(() => {
+  const handleBlur = () => {
+    if (isFinished || setupPhase !== 'ready') return;
+    setTimerActive(false);
+    tabViolationsRef.current += 1;
+    if (tabViolationsRef.current >= MAX_TAB_VIOLATIONS) {
+      setTabWarningVisible(true);
+      setTabCountdown(10);
+      if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
+      tabAutoSubmitRef.current = setInterval(() => {
+        setTabCountdown(prev => {
+          if (prev <= 1) { clearInterval(tabAutoSubmitRef.current!); setIsFinished(true); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setTabWarningVisible(true);
     }
-    return () => { stream?.getTracks().forEach(t => t.stop()); };
+  };
+  const handleFocus = () => {
+    if (tabViolationsRef.current < MAX_TAB_VIOLATIONS) {
+      setTabWarningVisible(false);
+      setTimerActive(true);
+    }
+  };
+  window.addEventListener('blur', handleBlur);
+  window.addEventListener('focus', handleFocus);
+  return () => { window.removeEventListener('blur', handleBlur); window.removeEventListener('focus', handleFocus); };
+}, [isFinished, setupPhase]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    if (faceIntervalRef.current)  clearInterval(faceIntervalRef.current);
+    if (autoSubmitRef.current)    clearInterval(autoSubmitRef.current);
+    if (tabAutoSubmitRef.current) clearInterval(tabAutoSubmitRef.current);
+    if (autoAdvanceRef.current)   clearTimeout(autoAdvanceRef.current);
+    if (document.fullscreenElement) exitFullscreenAPI();
   }, []);
 
+  // ────────────────────────────────────────────────────────────
+  // Quiz timer
+  // ────────────────────────────────────────────────────────────
   useEffect(() => {
-    const handle = () => {
-      if (document.hidden && !isFinished) {
-        tabViolationsRef.current += 1;
-        if (tabViolationsRef.current >= 2) setIsFinished(true);
-      }
-    };
-    document.addEventListener('visibilitychange', handle);
-    return () => document.removeEventListener('visibilitychange', handle);
-  }, [isFinished]);
+    if (!timerActive || isFinished || answerState !== 'unanswered' || fsWarning !== 'none' || tabWarningVisible) return;
+    if (timeLeft <= 0) {
+      setSelectedOption(-1);
+      setAnswerState('wrong');
+      setTimerActive(false);
+      return;
+    }
+    const t = setInterval(() => setTimeLeft(n => n - 1), 1000);
+    return () => clearInterval(t);
+  }, [timeLeft, timerActive, isFinished, answerState, fsWarning, tabWarningVisible]);
 
+  // ────────────────────────────────────────────────────────────
+  // Answer handling
+  // ────────────────────────────────────────────────────────────
   const advanceToNext = useCallback((answeredIdx: number) => {
     const newAnswers = [...answers, answeredIdx];
     setAnswers(newAnswers);
@@ -147,7 +326,7 @@ export default function DiagnosticQuiz() {
   }, [answers, currentIdx]);
 
   const handleOptionClick = useCallback((optIdx: number) => {
-    if (answerState !== 'unanswered' || fsWarning !== 'none') return;
+    if (answerState !== 'unanswered' || fsWarning !== 'none' || tabWarningVisible) return;
     setSelectedOption(optIdx);
     setTimerActive(false);
     const isCorrect = optIdx === questions[currentIdx].correct;
@@ -155,55 +334,53 @@ export default function DiagnosticQuiz() {
     if (isCorrect) {
       autoAdvanceRef.current = setTimeout(() => advanceToNext(optIdx), 1000);
     }
-  }, [answerState, currentIdx, advanceToNext, fsWarning]);
+  }, [answerState, currentIdx, advanceToNext, fsWarning, tabWarningVisible]);
 
-  useEffect(() => {
-    if (!timerActive || isFinished || answerState !== 'unanswered' || fsWarning !== 'none') return;
-    if (timeLeft <= 0) { setSelectedOption(-1); setAnswerState('wrong'); setTimerActive(false); return; }
-    const t = setInterval(() => setTimeLeft(n => n - 1), 1000);
-    return () => clearInterval(t);
-  }, [timeLeft, timerActive, isFinished, answerState, fsWarning]);
+  const handleReturnToFullscreen = () => {
+    enterFullscreen();
+    if (autoSubmitRef.current) clearInterval(autoSubmitRef.current);
+    setFsWarning('none');
+    setTimerActive(true);
+  };
 
-  useEffect(() => () => { if (autoAdvanceRef.current) clearTimeout(autoAdvanceRef.current); }, []);
+  const handleReturnFromTab = () => {
+    if (tabViolationsRef.current >= MAX_TAB_VIOLATIONS) return; // countdown running, can't dismiss
+    setTabWarningVisible(false);
+    setTimerActive(true);
+  };
 
-  // ── Save quiz results to Supabase when finished ───────────────
+  // ────────────────────────────────────────────────────────────
+  // Save results to Supabase
+  // ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isFinished || savedRef.current || answers.length === 0) return;
     savedRef.current = true;
+    if (document.fullscreenElement) exitFullscreenAPI();
 
     const saveResults = async () => {
       setSaving(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-
         const score = answers.filter((a, i) => a === questions[i].correct).length;
-
-        // Build per-topic results: { topic: 'Mechanics', correct: true }
         const topicResults = questions.map((q, i) => ({
-          topic: q.topic,
-          correct: answers[i] === q.correct,
-          answeredIdx: answers[i],
-          correctIdx: q.correct,
+          topic: q.topic, correct: answers[i] === q.correct,
+          answeredIdx: answers[i], correctIdx: q.correct,
         }));
-
-        // Delete old quiz result and insert new one (only keep latest)
         await supabase.from('quiz_results').delete().eq('user_id', user.id);
-        await supabase.from('quiz_results').insert({
-          user_id: user.id,
-          answers: topicResults,
-          score,
-        });
+        await supabase.from('quiz_results').insert({ user_id: user.id, answers: topicResults, score });
       } catch (err) {
         console.error('Failed to save quiz results:', err);
       } finally {
         setSaving(false);
       }
     };
-
     saveResults();
   }, [isFinished, answers]);
 
+  // ────────────────────────────────────────────────────────────
+  // Theme tokens
+  // ────────────────────────────────────────────────────────────
   const tk = {
     bg:      dark ? '#0F111A' : '#F0EEE9',
     card:    dark ? '#1C1F2E' : '#FFFFFF',
@@ -214,37 +391,72 @@ export default function DiagnosticQuiz() {
     alt:     dark ? '#161929' : '#E8E6E1',
   };
 
-  // ── Results screen ────────────────────────────────────────────
-  if (isFinished) {
-    if (document.fullscreenElement) exitFullscreenAPI();
+  // ────────────────────────────────────────────────────────────
+  // CAMERA PERMISSION SCREEN (shown while awaiting getUserMedia)
+  // ────────────────────────────────────────────────────────────
+  if (setupPhase === 'camera' && cameraGranted === null) {
+    return (
+      <div style={{ minHeight: '100vh', background: tk.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 24 }}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          style={{ background: tk.card, border: `1px solid ${tk.border}`, borderRadius: 20, padding: '40px 48px', maxWidth: 460, textAlign: 'center' }}
+        >
+          {/* Animated camera icon */}
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+            style={{ width: 72, height: 72, borderRadius: '50%', background: dark ? 'rgba(29,78,216,0.15)' : '#EEF2FF', border: '2px solid rgba(29,78,216,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1D4ED8" strokeWidth="1.8">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+          </motion.div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: tk.heading, marginBottom: 10 }}>Camera Access Required</h2>
+          <p style={{ fontSize: 14, color: tk.body, lineHeight: 1.7, marginBottom: 6 }}>
+            This diagnostic quiz uses AI-powered proctoring. Please <strong>Allow</strong> camera access when prompted by your browser.
+          </p>
+          <p style={{ fontSize: 12, color: tk.muted, lineHeight: 1.6 }}>
+            Your camera feed is used for face presence and attention tracking only. No footage is recorded or stored.
+          </p>
+          <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <motion.div
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ repeat: Infinity, duration: 1.2 }}
+              style={{ width: 8, height: 8, borderRadius: '50%', background: '#1D4ED8' }}
+            />
+            <span style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 600 }}>Waiting for permission...</span>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
+  // ────────────────────────────────────────────────────────────
+  // RESULTS SCREEN
+  // ────────────────────────────────────────────────────────────
+  if (isFinished) {
     const score = answers.filter((a, i) => a === questions[i].correct).length;
     const total = questions.length;
-    const pct = Math.round((score / total) * 100);
+    const pct   = Math.round((score / total) * 100);
 
-    // Find weak topics (wrong answers)
+    const totalViolations = fsViolationsRef.current + tabViolationsRef.current;
+
     const weakTopics = questions
       .filter((q, i) => answers[i] !== q.correct)
       .map(q => q.topic);
-
-    // Recommended labs from weak topics
-    const recommendedLabIds = [...new Set(
-      weakTopics.map(t => TOPIC_TO_LAB[t]).filter(Boolean)
-    )].slice(0, 3);
-
+    const recommendedLabIds = [...new Set(weakTopics.map(t => TOPIC_TO_LAB[t]).filter(Boolean))].slice(0, 3);
     const defaultLabs = ['simple-pendulum', 'ohms-law', 'acid-base-titration'];
     while (recommendedLabIds.length < 3) {
       const next = defaultLabs.find(l => !recommendedLabIds.includes(l));
       if (next) recommendedLabIds.push(next); else break;
     }
-
-    // Reason per recommended lab
     const labReasons: Record<string, string> = {
-      'simple-pendulum': 'Mechanics needs reinforcement',
-      'ohms-law': 'Electrostatics gap detected',
-      'acid-base-titration': 'Physical Chemistry needs work',
-      'flame-test': 'Inorganic Chemistry gap detected',
-      'le-chatelier': 'Thermodynamics needs reinforcement',
+      'simple-pendulum':    'Mechanics needs reinforcement',
+      'ohms-law':           'Electrostatics gap detected',
+      'acid-base-titration':'Physical Chemistry needs work',
+      'flame-test':         'Inorganic Chemistry gap detected',
+      'le-chatelier':       'Thermodynamics needs reinforcement',
       'electrolysis-water': 'Electronics gap detected',
     };
 
@@ -268,8 +480,17 @@ export default function DiagnosticQuiz() {
               {pct >= 70 ? 'Excellent work!' : pct >= 40 ? 'Good effort!' : 'Keep practising!'}
             </h2>
             <p style={{ fontSize: 14, color: tk.body, lineHeight: 1.65, maxWidth: 400, margin: '0 auto 16px' }}>
-              You answered {score} out of {total} questions correctly. Your mastery index and recommendations have been updated.
+              You answered {score} out of {total} questions correctly.
             </p>
+
+            {/* Proctoring summary */}
+            {totalViolations > 0 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.25)', marginBottom: 16 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#DC2626' }}>
+                  {totalViolations} proctoring violation{totalViolations > 1 ? 's' : ''} recorded
+                </span>
+              </div>
+            )}
 
             {/* Per-question badges */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -287,21 +508,13 @@ export default function DiagnosticQuiz() {
               ))}
             </div>
 
-            {saving && (
-              <div style={{ marginTop: 14, fontSize: 12, color: tk.muted }}>
-                Saving your results...
-              </div>
-            )}
+            {saving && <div style={{ marginTop: 14, fontSize: 12, color: tk.muted }}>Saving your results...</div>}
           </div>
 
           {/* Recommended labs */}
           <div style={{ background: tk.card, border: `1px solid ${tk.border}`, borderRadius: 20, padding: '24px 28px', marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#1D4ED8', marginBottom: 4 }}>
-              AI Recommendations
-            </div>
-            <p style={{ fontSize: 13, color: tk.body, marginBottom: 16 }}>
-              Based on your weak areas, start with these labs:
-            </p>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#1D4ED8', marginBottom: 4 }}>AI Recommendations</div>
+            <p style={{ fontSize: 13, color: tk.body, marginBottom: 16 }}>Based on your weak areas, start with these labs:</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {recommendedLabIds.map((labId, i) => (
                 <Link key={labId} to={`/labs/${labId}`} style={{
@@ -322,28 +535,25 @@ export default function DiagnosticQuiz() {
             </div>
           </div>
 
-          <button onClick={() => navigate('/dashboard')} style={{
-            width: '100%', padding: '14px', background: '#1D4ED8', color: '#fff',
-            fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: 'pointer',
-          }}
+          <button onClick={() => navigate('/dashboard')} style={{ width: '100%', padding: '14px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 14, borderRadius: 12, border: 'none', cursor: 'pointer' }}
             onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
             onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
-          >
-            Go to Dashboard →
-          </button>
+          >Go to Dashboard →</button>
         </motion.div>
       </div>
     );
   }
 
-  // ── Quiz screen ───────────────────────────────────────────────
+  // ────────────────────────────────────────────────────────────
+  // QUIZ SCREEN
+  // ────────────────────────────────────────────────────────────
   const q = questions[currentIdx];
 
   const getOptionStyle = (i: number): React.CSSProperties => {
     const base: React.CSSProperties = {
       width: '100%', textAlign: 'left', padding: '16px 20px', borderRadius: 12,
       border: `1.5px solid ${tk.border}`, background: tk.card,
-      cursor: answerState === 'unanswered' && fsWarning === 'none' ? 'pointer' : 'default',
+      cursor: answerState === 'unanswered' && fsWarning === 'none' && !tabWarningVisible ? 'pointer' : 'default',
       display: 'flex', alignItems: 'center', gap: 14,
       transition: 'border-color 0.15s, background 0.15s', outline: 'none',
     };
@@ -356,62 +566,147 @@ export default function DiagnosticQuiz() {
   return (
     <div style={{ minHeight: '100vh', background: tk.bg, paddingTop: 80, paddingBottom: 40, position: 'relative' }}>
 
-      {/* Fullscreen Warning Overlay */}
-      {fsWarning !== 'none' && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(10, 10, 20, 0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
-          <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
-          <div style={{ textAlign: 'center', maxWidth: 440 }}>
-            <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.15)', padding: '3px 12px', borderRadius: 999, marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              Proctoring Violation #{fsViolationsRef.current}
+      {/* ── Tab-switch warning overlay ──────────────────────── */}
+      <AnimatePresence>
+        {tabWarningVisible && !isFinished && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 350, background: 'rgba(10,10,20,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}
+          >
+            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+              </svg>
             </div>
-            <h2 style={{ fontSize: 24, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>
-              {fsWarning === 'first' ? 'Fullscreen Required' : '⚠ Final Warning'}
-            </h2>
-            <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 8 }}>
-              {fsWarning === 'first'
-                ? 'You have exited fullscreen mode. The quiz must be taken in fullscreen to maintain academic integrity.'
-                : 'This is your final warning. Return to fullscreen immediately or your quiz will be auto-submitted.'}
-            </p>
-            {fsWarning === 'second' && (
-              <>
-                <div style={{ fontSize: 48, fontWeight: 800, color: '#DC2626', fontFamily: 'monospace', marginTop: 16, marginBottom: 4 }}>{autoSubmitCountdown}</div>
-                <p style={{ fontSize: 13, color: '#525870' }}>Quiz will auto-submit in {autoSubmitCountdown} second{autoSubmitCountdown !== 1 ? 's' : ''}</p>
-              </>
+            <div style={{ textAlign: 'center', maxWidth: 440 }}>
+              <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.15)', padding: '3px 12px', borderRadius: 999, marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Tab Switch #{tabViolationsRef.current}
+              </div>
+              <h2 style={{ fontSize: 24, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>
+                {tabViolationsRef.current >= MAX_TAB_VIOLATIONS ? '⚠ Final Warning' : 'Window Switch Detected'}
+              </h2>
+              <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 8 }}>
+                {tabViolationsRef.current >= MAX_TAB_VIOLATIONS
+                  ? 'You have switched tabs or windows too many times. Return to this window or the quiz will be auto-submitted.'
+                  : 'You switched away from this window. The timer has been paused. Return to continue your quiz.'}
+              </p>
+              {tabViolationsRef.current >= MAX_TAB_VIOLATIONS && (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: '#DC2626', fontFamily: 'monospace', margin: '16px 0 4px' }}>{tabCountdown}</div>
+                  <p style={{ fontSize: 13, color: '#525870' }}>Auto-submitting in {tabCountdown} second{tabCountdown !== 1 ? 's' : ''}</p>
+                </>
+              )}
+            </div>
+            {tabViolationsRef.current < MAX_TAB_VIOLATIONS && (
+              <button onClick={handleReturnFromTab} style={{ padding: '13px 36px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}
+              >Resume Quiz</button>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Fullscreen violation overlay ────────────────────── */}
+      <AnimatePresence>
+        {fsWarning !== 'none' && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(10,10,20,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}
+          >
+            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', border: '2px solid rgba(220,38,38,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div style={{ textAlign: 'center', maxWidth: 440 }}>
+              <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.15)', padding: '3px 12px', borderRadius: 999, marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Proctoring Violation #{fsViolationsRef.current}
+              </div>
+              <h2 style={{ fontSize: 24, fontWeight: 800, color: '#F0F0F0', marginBottom: 10 }}>
+                {fsWarning === 'first' ? 'Fullscreen Required' : '⚠ Final Warning'}
+              </h2>
+              <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.7, marginBottom: 8 }}>
+                {fsWarning === 'first'
+                  ? 'You exited fullscreen. The quiz must remain in fullscreen mode to maintain academic integrity.'
+                  : 'This is your final warning. Return to fullscreen immediately or your quiz will be auto-submitted.'}
+              </p>
+              {fsWarning === 'second' && (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: '#DC2626', fontFamily: 'monospace', margin: '16px 0 4px' }}>{autoSubmitCountdown}</div>
+                  <p style={{ fontSize: 13, color: '#525870' }}>Auto-submitting in {autoSubmitCountdown} second{autoSubmitCountdown !== 1 ? 's' : ''}</p>
+                </>
+              )}
+            </div>
+            <button onClick={handleReturnToFullscreen} style={{ padding: '13px 36px', background: '#DC2626', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
+            >Return to Fullscreen Now</button>
+            {fsWarning === 'first' && (
+              <button onClick={() => { setIsFinished(true); exitFullscreenAPI(); }} style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
+                Submit quiz now
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Camera tile ─────────────────────────────────────── */}
+      <div style={{ position: 'fixed', top: 80, right: 20, width: 164, zIndex: 50 }}>
+        {/* Video */}
+        <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1px solid ${faceStatus === 'ok' ? 'rgba(5,150,105,0.5)' : faceStatus === 'missing' || faceStatus === 'lookaway' ? 'rgba(220,38,38,0.5)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.6)' : tk.border}`, background: '#000', transition: 'border-color 0.3s' }}>
+          <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: 104, objectFit: 'cover', transform: 'scaleX(-1)', display: 'block' }} />
+          {/* Live dot */}
+          <div style={{ position: 'absolute', top: 6, left: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 1.2 }}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live</span>
           </div>
-          <button onClick={handleReturnToFullscreen} style={{ padding: '13px 36px', background: '#DC2626', color: '#fff', fontWeight: 700, fontSize: 15, borderRadius: 12, border: 'none', cursor: 'pointer' }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#B91C1C')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#DC2626')}
-          >Return to Fullscreen Now</button>
-          {fsWarning === 'first' && (
-            <button onClick={() => { setIsFinished(true); exitFullscreenAPI(); }} style={{ background: 'none', border: 'none', color: '#525870', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>
-              Submit quiz now (current answers will be scored)
-            </button>
+          {/* Face status badge overlaid on video */}
+          {faceStatus !== 'checking' && (
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              padding: '4px 8px', fontSize: 10, fontWeight: 700, textAlign: 'center',
+              background: faceStatus === 'ok' ? 'rgba(5,150,105,0.8)' : faceStatus === 'multiple' ? 'rgba(217,119,6,0.85)' : 'rgba(220,38,38,0.8)',
+              color: '#fff',
+            }}>
+              {faceStatus === 'ok'       ? '✓ Face detected'
+               : faceStatus === 'missing'  ? '⚠ No face'
+               : faceStatus === 'lookaway' ? '⚠ Look at screen'
+               : '⚠ Multiple faces'}
+            </div>
           )}
         </div>
-      )}
 
-      {/* Camera feed */}
-      <div style={{ position: 'fixed', top: 80, right: 20, width: 160, height: 100, background: '#000', borderRadius: 10, overflow: 'hidden', border: `1px solid ${dark ? '#232840' : '#E8E5DF'}`, zIndex: 50 }}>
-        <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
-        <div style={{ position: 'absolute', top: 6, left: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }}></div>
-          <span style={{ fontSize: 9, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live</span>
-        </div>
+        {/* Camera warning strip */}
+        <AnimatePresence>
+          {camWarning && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              style={{ marginTop: 6, padding: '6px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, lineHeight: 1.4, background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.3)', color: '#FCA5A5' }}
+            >
+              {camWarning}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Camera denied notice */}
+        {cameraGranted === false && (
+          <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)', color: '#FCD34D', lineHeight: 1.4 }}>
+            Camera denied — proctoring limited
+          </div>
+        )}
       </div>
 
-      {/* Status bar */}
+      {/* ── Status bar ──────────────────────────────────────── */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 56, background: dark ? '#161929' : '#FFFFFF', borderBottom: `1px solid ${dark ? '#232840' : '#E8E5DF'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', zIndex: 40 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: dark ? '#EDEDF0' : '#111' }}>ARISE — Diagnostic Quiz</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {fsViolationsRef.current > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Violation count pill */}
+          {(fsViolationsRef.current + tabViolationsRef.current) > 0 && (
             <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.1)', padding: '3px 10px', borderRadius: 999 }}>
-              ⚠ {fsViolationsRef.current} violation{fsViolationsRef.current > 1 ? 's' : ''}
+              ⚠ {fsViolationsRef.current + tabViolationsRef.current} violation{(fsViolationsRef.current + tabViolationsRef.current) > 1 ? 's' : ''}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: isFullscreen ? '#059669' : '#DC2626', fontWeight: 600 }}>
@@ -426,6 +721,7 @@ export default function DiagnosticQuiz() {
         </div>
       </div>
 
+      {/* ── Quiz content ────────────────────────────────────── */}
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '0 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>
           <div>
@@ -450,7 +746,7 @@ export default function DiagnosticQuiz() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
               {q.options.map((opt, i) => (
                 <button key={i} onClick={() => handleOptionClick(i)} style={getOptionStyle(i)}
-                  onMouseEnter={e => { if (answerState === 'unanswered' && fsWarning === 'none') e.currentTarget.style.borderColor = '#1D4ED8'; }}
+                  onMouseEnter={e => { if (answerState === 'unanswered' && fsWarning === 'none' && !tabWarningVisible) e.currentTarget.style.borderColor = '#1D4ED8'; }}
                   onMouseLeave={e => { if (answerState === 'unanswered') e.currentTarget.style.borderColor = tk.border; }}
                 >
                   <div style={{

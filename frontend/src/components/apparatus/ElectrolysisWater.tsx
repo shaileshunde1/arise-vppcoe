@@ -14,7 +14,7 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
 
   const { setValidationError, hasAdjustedSlider } = useLabStore();
 
-  const [isRunning, setIsRunning] = useState(false);
+  const [isRunning, setIsRunning]     = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
 
   const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -28,75 +28,60 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
   const volH2 = timeElapsed * reactionRateH2;
   const volO2 = timeElapsed * reactionRateO2;
 
-  // Inverted test tubes: gas collects at the TOP (closed end)
-  // Tube height = 120px. Gas fills from top downward.
-  const TUBE_TOP    = 100; // y of closed top of tube
-  const TUBE_HEIGHT = 120; // total tube length
-  const MAX_VOL     = 18;  // mL for full tube
+  const TUBE_HEIGHT = 120;
+  const MAX_VOL     = 18;
 
   const h2FillHeight = Math.min(TUBE_HEIGHT - 4, (volH2 / MAX_VOL) * (TUBE_HEIGHT - 4));
   const o2FillHeight = Math.min(TUBE_HEIGHT - 4, (volO2 / MAX_VOL) * (TUBE_HEIGHT - 4));
 
-  // Bubble positions — stable (useMemo prevents layout jitter)
+  // Bubbles spawn along electrode surface (x spread, y starts at electrode bottom going up)
+  // Electrode is rect y=0 to y=160 inside the beaker (translate 200)
+  // Bubbles should start near electrode mid-to-bottom and rise to tube opening
   const cathodeBubbles = useMemo(() =>
-    Array.from({ length: 10 }, (_, i) => ({
-      cx: -6 + (i % 3) * 6,
-      cy: (i % 4) * 12,
-      r: 2 + (i % 3) * 0.8,
+    Array.from({ length: 12 }, (_, i) => ({
+      cx: (i % 2 === 0 ? -1 : 1) * (3 + (i % 3) * 2.5),
+      startY: 140 - (i % 4) * 22,   // spread along electrode height
+      r: 1.8 + (i % 3) * 0.9,
+      delay: i * 0.18,
     })), []);
 
   const anodeBubbles = useMemo(() =>
-    Array.from({ length: 5 }, (_, i) => ({
-      cx: -4 + (i % 3) * 5,
-      cy: (i % 3) * 14,
-      r: 2 + (i % 2) * 0.7,
+    Array.from({ length: 6 }, (_, i) => ({
+      cx: (i % 2 === 0 ? -1 : 1) * (2 + (i % 3) * 2),
+      startY: 140 - (i % 3) * 28,
+      r: 2 + (i % 2) * 1,
+      delay: i * 0.35,
     })), []);
 
   useEffect(() => {
     if (isRunning) {
       intervalRef.current = setInterval(() => setTimeElapsed(t => t + 1), 1000);
-      const bubbleSpeed = Math.max(0.6, 1.4 / reactionRateH2);
+      const bubbleSpeed = Math.max(0.5, 1.2 / reactionRateH2);
 
-      // Cathode: H2 bubbles — rise faster (more bubbles)
       if (cathodeBubblesRef.current) {
         gsap.killTweensOf(cathodeBubblesRef.current.children);
         Array.from(cathodeBubblesRef.current.children).forEach((el, i) => {
-          gsap.to(el, {
-            y: -80 - Math.random() * 30,
-            opacity: 0,
-            duration: bubbleSpeed * (0.8 + i * 0.15),
-            repeat: -1,
-            delay: i * 0.2,
-            ease: 'power1.out',
-            repeatRefresh: true,
-          });
+          gsap.fromTo(el,
+            { y: 0, opacity: 1 },
+            { y: -120, opacity: 0, duration: bubbleSpeed * (0.6 + (i % 3) * 0.15), repeat: -1, delay: i * 0.18, ease: 'power1.out' }
+          );
         });
       }
 
-      // Anode: O2 bubbles — rise slower (fewer bubbles, half rate)
       if (anodeBubblesRef.current) {
         gsap.killTweensOf(anodeBubblesRef.current.children);
         Array.from(anodeBubblesRef.current.children).forEach((el, i) => {
-          gsap.to(el, {
-            y: -60 - Math.random() * 20,
-            opacity: 0,
-            duration: bubbleSpeed * 1.8 * (0.8 + i * 0.2),
-            repeat: -1,
-            delay: i * 0.4,
-            ease: 'power1.out',
-            repeatRefresh: true,
-          });
+          gsap.fromTo(el,
+            { y: 0, opacity: 1 },
+            { y: -100, opacity: 0, duration: bubbleSpeed * 1.5 * (0.6 + (i % 2) * 0.25), repeat: -1, delay: i * 0.3, ease: 'power1.out' }
+          );
         });
       }
 
-      // Electron flow
       if (electronRef.current) {
         gsap.killTweensOf(electronRef.current.children);
         gsap.to(electronRef.current.children, {
-          strokeDashoffset: -24,
-          duration: 0.4,
-          repeat: -1,
-          ease: 'none',
+          strokeDashoffset: -24, duration: 0.4, repeat: -1, ease: 'none',
         });
       }
     } else {
@@ -104,19 +89,17 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
       if (cathodeBubblesRef.current) {
         gsap.killTweensOf(cathodeBubblesRef.current.children);
         Array.from(cathodeBubblesRef.current.children).forEach(el =>
-          gsap.set(el, { y: 0, opacity: 0.6 }));
+          gsap.set(el, { y: 0, opacity: 0 }));
       }
       if (anodeBubblesRef.current) {
         gsap.killTweensOf(anodeBubblesRef.current.children);
         Array.from(anodeBubblesRef.current.children).forEach(el =>
-          gsap.set(el, { y: 0, opacity: 0.6 }));
+          gsap.set(el, { y: 0, opacity: 0 }));
       }
-      if (electronRef.current) {
-        gsap.killTweensOf(electronRef.current.children);
-      }
+      if (electronRef.current) gsap.killTweensOf(electronRef.current.children);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isRunning, reactionRateH2]);
+  }, [isRunning, reactionRateH2, cathodeBubbles, anodeBubbles]);
 
   const handleStart = () => {
     if (!hasAdjustedSlider['electrolysis-water']) {
@@ -132,10 +115,10 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
 
   const recordObservation = () => {
     addObservation({
-      'Time (s)':      timeElapsed,
-      'H₂ Vol (mL)':  +volH2.toFixed(2),
-      'O₂ Vol (mL)':  +volO2.toFixed(2),
-      'H₂:O₂ Ratio':  volO2 > 0 ? +(volH2 / volO2).toFixed(2) : 0,
+      'Time (s)':     timeElapsed,
+      'H₂ Vol (mL)': +volH2.toFixed(2),
+      'O₂ Vol (mL)': +volO2.toFixed(2),
+      'H₂:O₂ Ratio': volO2 > 0 ? +(volH2 / volO2).toFixed(2) : 0,
     });
   };
 
@@ -147,12 +130,8 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
         <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-2">Gas Collection</div>
         <div className="font-mono text-sm flex flex-col gap-1.5">
           <span className="text-cyan-400">Time: {timeElapsed}s</span>
-          <span className="text-white">
-            H₂ (cathode): <strong>{volH2.toFixed(2)} mL</strong>
-          </span>
-          <span className="text-blue-400">
-            O₂ (anode): <strong>{volO2.toFixed(2)} mL</strong>
-          </span>
+          <span className="text-white">H₂ (cathode): <strong>{volH2.toFixed(2)} mL</strong></span>
+          <span className="text-blue-400">O₂ (anode): <strong>{volO2.toFixed(2)} mL</strong></span>
           <span className="text-yellow-400 border-t border-gray-700 pt-1 mt-1">
             H₂:O₂ = {volO2 > 0 ? (volH2 / volO2).toFixed(1) : '—'} : 1
           </span>
@@ -162,146 +141,107 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
 
       <svg width="460" height="460" viewBox="0 0 460 460" className="overflow-visible">
 
-        {/* ── Power supply ── */}
+        {/* Power supply */}
         <g transform="translate(185, 28)">
-          <rect x="-40" y="-16" width="90" height="36" rx="6"
-            fill="#0f172a" stroke="#334155" strokeWidth="1.5" />
-          <text x="5" y="-2" fill="#fbbf24" fontSize="12" fontWeight="700" textAnchor="middle">
-            {voltage}V DC
-          </text>
+          <rect x="-40" y="-16" width="90" height="36" rx="6" fill="#0f172a" stroke="#334155" strokeWidth="1.5" />
+          <text x="5" y="-2" fill="#fbbf24" fontSize="12" fontWeight="700" textAnchor="middle">{voltage}V DC</text>
           <text x="5" y="12" fill="#64748b" fontSize="8" textAnchor="middle">Power Supply</text>
-          {/* Terminal labels */}
           <text x="-30" y="26" fill="#ef4444" fontSize="10" fontWeight="700" textAnchor="middle">+</text>
-          <text x="40" y="26" fill="#3b82f6" fontSize="10" fontWeight="700" textAnchor="middle">−</text>
+          <text x="40"  y="26" fill="#3b82f6" fontSize="10" fontWeight="700" textAnchor="middle">−</text>
         </g>
 
-        {/* ── Wires ── */}
-        {/* Anode wire: + terminal → right electrode */}
+        {/* Wires */}
         <polyline points="155,28 120,28 120,200" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
-        {/* Cathode wire: − terminal → left electrode */}
         <polyline points="225,28 340,28 340,200" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" />
 
-        {/* Electron flow animation */}
-        <g ref={electronRef} opacity={isRunning ? 1 : 0.25}>
-          {/* Electrons travel from − (cathode/right wire) → + (anode/left wire) via external circuit */}
-          <line x1="310" y1="28" x2="228" y2="28"
-            stroke="#00d4ff" strokeWidth="3"
-            strokeDasharray="5 10" strokeLinecap="round" />
-          <line x1="155" y1="28" x2="120" y2="28"
-            stroke="#00d4ff" strokeWidth="3"
-            strokeDasharray="5 10" strokeLinecap="round" />
+        {/* Electron flow */}
+        <g ref={electronRef} opacity={isRunning ? 1 : 0.2} style={{ transition: 'opacity 0.4s' }}>
+          <line x1="310" y1="28" x2="228" y2="28" stroke="#00d4ff" strokeWidth="3" strokeDasharray="5 10" strokeLinecap="round" />
+          <line x1="155" y1="28" x2="120" y2="28" stroke="#00d4ff" strokeWidth="3" strokeDasharray="5 10" strokeLinecap="round" />
         </g>
-        {/* Electron direction label */}
         {isRunning && (
-          <text x="228" y="18" fill="#00d4ff" fontSize="9" textAnchor="middle">
-            e⁻ flow
-          </text>
+          <text x="228" y="18" fill="#00d4ff" fontSize="9" textAnchor="middle">e⁻ flow</text>
         )}
 
-        {/* ── Beaker ── */}
+        {/* Beaker */}
         <path d="M 80 200 L 80 400 Q 80 420 100 420 L 360 420 Q 380 420 380 400 L 380 200 Z"
           fill="none" stroke="#475569" strokeWidth="3" />
-        {/* Beaker rim */}
         <line x1="72" y1="200" x2="388" y2="200" stroke="#475569" strokeWidth="3" strokeLinecap="round" />
 
-        {/* Electrolyte solution (dilute H₂SO₄) */}
+        {/* Electrolyte */}
         <path d="M 82 260 L 378 260 L 378 400 Q 378 418 360 418 L 100 418 Q 82 418 82 400 Z"
-          fill={`rgba(253, 224, 71, ${0.1 + (conc / 10) * 0.15})`} />
-        {/* Solution surface */}
-        <line x1="82" y1="260" x2="378" y2="260"
-          stroke="rgba(253,224,71,0.4)" strokeWidth="1.5" />
-        {/* Electrolyte label */}
-        <text x="230" y="360" fill="rgba(253,224,71,0.5)" fontSize="11" textAnchor="middle">
-          Dilute H₂SO₄
-        </text>
-        <text x="230" y="375" fill="rgba(253,224,71,0.3)" fontSize="9" textAnchor="middle">
-          (electrolyte)
-        </text>
+          fill={`rgba(253,224,71,${0.1 + (conc / 10) * 0.15})`} />
+        <line x1="82" y1="260" x2="378" y2="260" stroke="rgba(253,224,71,0.4)" strokeWidth="1.5" />
+        <text x="230" y="360" fill="rgba(253,224,71,0.5)" fontSize="11" textAnchor="middle">Dilute H₂SO₄</text>
+        <text x="230" y="375" fill="rgba(253,224,71,0.3)" fontSize="9"  textAnchor="middle">(electrolyte)</text>
 
-        {/* ── Electrodes ── */}
-        {/* ANODE (+) — left, connected to + terminal (red wire) */}
-        <rect x="113" y="200" width="14" height="160" rx="2"
-          fill="#334155" stroke="#ef4444" strokeWidth="1" />
+        {/* Anode (+) — left */}
+        <rect x="113" y="200" width="14" height="160" rx="2" fill="#334155" stroke="#ef4444" strokeWidth="1" />
         <text x="120" y="192" fill="#ef4444" fontSize="11" fontWeight="700" textAnchor="middle">+</text>
-        <text x="120" y="445" fill="#ef4444" fontSize="9" textAnchor="middle">Anode</text>
+        <text x="120" y="445" fill="#ef4444" fontSize="9"  textAnchor="middle">Anode</text>
 
-        {/* CATHODE (−) — right, connected to − terminal (blue wire) */}
-        <rect x="333" y="200" width="14" height="160" rx="2"
-          fill="#334155" stroke="#3b82f6" strokeWidth="1" />
+        {/* Cathode (−) — right */}
+        <rect x="333" y="200" width="14" height="160" rx="2" fill="#334155" stroke="#3b82f6" strokeWidth="1" />
         <text x="340" y="192" fill="#3b82f6" fontSize="11" fontWeight="700" textAnchor="middle">−</text>
-        <text x="340" y="445" fill="#3b82f6" fontSize="9" textAnchor="middle">Cathode</text>
+        <text x="340" y="445" fill="#3b82f6" fontSize="9"  textAnchor="middle">Cathode</text>
 
-        {/* ── Inverted test tubes ── */}
-        {/* O2 tube — over anode (left) */}
+        {/* O₂ tube — over anode (left) */}
         <g transform="translate(120, 200)">
-          {/* Tube outline — closed at top, open at bottom (submerged) */}
           <path d="M -18 -100 Q -18 -110 0 -110 Q 18 -110 18 -100 L 18 20 L -18 20 Z"
             fill="rgba(255,255,255,0.04)" stroke="#94a3b8" strokeWidth="1.5" />
-          {/* O2 gas (colourless) collecting at top */}
           {o2FillHeight > 0 && (
-            <rect x="-16" y={-108 + (TUBE_HEIGHT - o2FillHeight - 4)}
-              width="32" height={o2FillHeight}
-              fill="rgba(200, 230, 255, 0.35)"
-              style={{ transition: 'height 0.5s, y 0.5s' }} />
+            <rect x="-15" y={-106} width="30" height={o2FillHeight}
+              fill="rgba(200,230,255,0.38)" style={{ transition: 'height 0.5s' }} />
           )}
-          {/* Gas label inside tube when enough collected */}
           {volO2 > 1 && (
-            <text x="0" y={-108 + (TUBE_HEIGHT - o2FillHeight) / 2}
-              fill="rgba(200,230,255,0.7)" fontSize="9" textAnchor="middle" fontWeight="600">
-              O₂
-            </text>
+            <text x="0" y={-106 + o2FillHeight / 2 + 4}
+              fill="rgba(200,230,255,0.8)" fontSize="9" textAnchor="middle" fontWeight="600">O₂</text>
           )}
-          {/* Anode bubbles rising up */}
-          <g ref={anodeBubblesRef} opacity={isRunning ? 1 : 0}>
-            {anodeBubbles.map((b, i) => (
-              <circle key={i} cx={b.cx} cy={b.cy} r={b.r}
-                fill="rgba(200,230,255,0.7)" />
-            ))}
-          </g>
         </g>
 
-        {/* H2 tube — over cathode (right) */}
+        {/* H₂ tube — over cathode (right) */}
         <g transform="translate(340, 200)">
           <path d="M -18 -100 Q -18 -110 0 -110 Q 18 -110 18 -100 L 18 20 L -18 20 Z"
             fill="rgba(255,255,255,0.04)" stroke="#94a3b8" strokeWidth="1.5" />
-          {/* H2 gas collecting at top — fills TWICE as fast as O2 */}
           {h2FillHeight > 0 && (
-            <rect x="-16" y={-108 + (TUBE_HEIGHT - h2FillHeight - 4)}
-              width="32" height={h2FillHeight}
-              fill="rgba(250, 220, 100, 0.4)"
-              style={{ transition: 'height 0.5s, y 0.5s' }} />
+            <rect x="-15" y={-106} width="30" height={h2FillHeight}
+              fill="rgba(250,220,100,0.42)" style={{ transition: 'height 0.5s' }} />
           )}
           {volH2 > 1 && (
-            <text x="0" y={-108 + (TUBE_HEIGHT - h2FillHeight) / 2}
-              fill="rgba(250,220,100,0.8)" fontSize="9" textAnchor="middle" fontWeight="600">
-              H₂
-            </text>
+            <text x="0" y={-106 + h2FillHeight / 2 + 4}
+              fill="rgba(250,220,100,0.9)" fontSize="9" textAnchor="middle" fontWeight="600">H₂</text>
           )}
-          {/* Cathode bubbles */}
-          <g ref={cathodeBubblesRef} opacity={isRunning ? 1 : 0}>
-            {cathodeBubbles.map((b, i) => (
-              <circle key={i} cx={b.cx} cy={b.cy} r={b.r}
-                fill="rgba(250,220,100,0.8)" />
-            ))}
-          </g>
         </g>
 
-        {/* ── Volume comparison bar ── */}
+        {/* Anode bubbles — absolute coords, rise from electrode surface (x≈120, y=260–360) upward */}
+        <g ref={anodeBubblesRef}>
+          {anodeBubbles.map((b, i) => (
+            <circle key={i} cx={120 + b.cx} cy={260 + (i % 3) * 30} r={b.r}
+              fill="rgba(200,230,255,0.9)" opacity="1" />
+          ))}
+        </g>
+
+        {/* Cathode bubbles — absolute coords, rise from electrode surface (x≈340, y=260–360) upward */}
+        <g ref={cathodeBubblesRef}>
+          {cathodeBubbles.map((b, i) => (
+            <circle key={i} cx={340 + b.cx} cy={265 + (i % 4) * 22} r={b.r}
+              fill="rgba(250,220,100,0.9)" opacity="1" />
+          ))}
+        </g>
+
+        {/* Volume bar */}
         {(volH2 > 0 || volO2 > 0) && (
-          <g transform="translate(230, 430)">
+          <g transform="translate(230,430)">
             <text x="0" y="-4" fill="#64748b" fontSize="8" textAnchor="middle">Volume comparison</text>
             <rect x="-60" y="0" width="120" height="10" rx="3" fill="#1e293b" />
-            {/* H2 portion (2/3 of total = left) */}
             <rect x="-60" y="0"
               width={Math.min(120, (volH2 / (volH2 + volO2 + 0.001)) * 120)}
-              height="10" rx="3"
-              fill="#fde047" opacity="0.7" />
+              height="10" rx="3" fill="#fde047" opacity="0.7" />
             <text x="-60" y="22" fill="#fde047" fontSize="8">H₂</text>
-            <text x="60" y="22"  fill="#93c5fd" fontSize="8" textAnchor="end">O₂</text>
+            <text x="60"  y="22" fill="#93c5fd" fontSize="8" textAnchor="end">O₂</text>
           </g>
         )}
 
-        {/* Reaction equation */}
         <text x="230" y="455" fill="#475569" fontSize="10" textAnchor="middle">
           2H₂O → 2H₂ + O₂ (electrolysis)
         </text>
@@ -320,12 +260,10 @@ export default function ElectrolysisWater({ varState, addObservation }: Apparatu
           className="w-full py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30 rounded font-bold text-sm transition-colors">
           {isRunning ? '⏸ Pause' : '▶ Start Electrolysis'}
         </button>
-
         <button onClick={recordObservation}
           className="w-full py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold text-sm transition-colors">
           Log Gas Volumes
         </button>
-
         <button onClick={() => { setIsRunning(false); setTimeElapsed(0); }}
           className="w-full py-2 bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30 rounded font-bold text-sm transition-colors">
           Reset
