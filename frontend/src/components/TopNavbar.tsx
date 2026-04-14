@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
@@ -20,10 +19,10 @@ const SunIcon = () => (
 );
 
 const NAV_LINKS = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Labs', to: '/labs' },
-  { label: 'Journal', to: '/journal' },
-  { label: 'Leaderboard', to: '/leaderboard' },
+  { label: 'Dashboard',   to: '/dashboard'   },
+  { label: 'Labs',        to: '/labs'         },
+  { label: 'Journal',     to: '/journal'      },
+  { label: 'Leaderboard', to: '/leaderboard'  },
 ];
 
 export default function TopNavbar() {
@@ -31,72 +30,107 @@ export default function TopNavbar() {
   const { theme, toggleTheme } = useTheme();
   const dark = theme === 'dark';
 
-  // Get real profile from global context — no more manual Supabase calls
   const { profile } = useUser();
-  const isTeacher = profile?.role === 'teacher';
+  const isTeacher  = profile?.role === 'teacher';
   const avatarSeed = profile?.name || localStorage.getItem('arise-name') || 'Profile';
-
-  const tk = {
-    navBg:    dark ? '#161929' : '#FFFFFF',
-    border:   dark ? '#232840' : '#E8E5DF',
-    heading:  dark ? '#EDEDF0' : '#111111',
-    body:     dark ? '#8890A4' : '#666666',
-    muted:    dark ? '#525870' : '#AAAAAA',
-    toggleBg: dark ? '#232840' : '#F0EEE9',
-    activeBg: dark ? 'rgba(29,78,216,0.14)' : '#EEF2FF',
-    activeText: '#1D4ED8',
-    hoverBg:  dark ? 'rgba(255,255,255,0.04)' : '#F5F3EE',
-  };
 
   const isActive = (to: string) => {
     if (to === '/dashboard') return location.pathname === '/dashboard';
     return location.pathname.startsWith(to);
   };
 
+  // All colors via CSS variables — matches Lab Catalog's token system exactly.
+  // Active nav uses var(--secondary) which is #a8c0d8 dark / #1d4f82 light.
+  // Active bg mirrors ncert-chip-bg which is the same palette as the catalog's active states.
   return (
     <nav style={{
-      height: 58, background: tk.navBg,
-      borderBottom: `1px solid ${tk.border}`,
-      display: 'flex', alignItems: 'center',
-      padding: '0 28px', flexShrink: 0,
+      height: 58,
+      background: 'var(--surface-container-low)',
+      borderBottom: '1px solid var(--card-border)',
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 clamp(16px, 3vw, 28px)',
+      flexShrink: 0,
       transition: 'background 0.3s, border-color 0.3s',
-      position: 'sticky', top: 0, zIndex: 40,
+      position: 'sticky',
+      top: 0,
+      zIndex: 40,
     }}>
       <div style={{
-        display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', width: '100%',
-        maxWidth: 1200, margin: '0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        maxWidth: 1200,
+        margin: '0 auto',
       }}>
 
-        {/* Left: Logo + Nav links */}
+        {/* ── Left: Logo + nav links ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 7, textDecoration: 'none', marginRight: 16 }}>
+
+          {/* Logo */}
+          <Link
+            to="/"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, textDecoration: 'none', marginRight: 16 }}
+          >
             <div style={{
-              width: 26, height: 26, background: tk.heading,
-              borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'background 0.3s', flexShrink: 0,
+              width: 26, height: 26,
+              background: 'var(--primary)',
+              borderRadius: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'background 0.3s',
+              flexShrink: 0,
             }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={dark ? '#0F111A' : '#F0EEE9'} strokeWidth="2.5">
+              <svg
+                width="13" height="13" viewBox="0 0 24 24" fill="none"
+                stroke={dark ? '#0c0e10' : '#f0ede8'}
+                strokeWidth="2.5"
+              >
                 <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18"/>
               </svg>
             </div>
-            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.3px', color: tk.heading }}>ARISE</span>
+            <span style={{
+              fontWeight: 800,
+              fontSize: 15,
+              letterSpacing: '-0.3px',
+              color: 'var(--primary)',
+              transition: 'color 0.3s',
+            }}>
+              ARISE
+            </span>
           </Link>
 
+          {/* Nav links */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {NAV_LINKS.map(link => {
               const active = isActive(link.to);
               return (
-                <Link key={link.to} to={link.to} style={{
-                  padding: '6px 12px', borderRadius: 8,
-                  fontSize: 13, fontWeight: active ? 700 : 500,
-                  textDecoration: 'none',
-                  color: active ? tk.activeText : tk.body,
-                  background: active ? tk.activeBg : 'transparent',
-                  transition: 'all 0.15s',
-                }}
-                  onMouseEnter={e => { if (!active) { e.currentTarget.style.background = tk.hoverBg; e.currentTarget.style.color = tk.heading; } }}
-                  onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = tk.body; } }}
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className="font-label"
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    fontWeight: active ? 700 : 500,
+                    textDecoration: 'none',
+                    color: active ? 'var(--secondary)' : 'var(--on-surface-variant)',
+                    background: active ? 'var(--ncert-chip-bg)' : 'transparent',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => {
+                    if (!active) {
+                      e.currentTarget.style.background = 'var(--surface-container)';
+                      e.currentTarget.style.color = 'var(--on-surface)';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!active) {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = 'var(--on-surface-variant)';
+                    }
+                  }}
                 >
                   {link.label}
                 </Link>
@@ -105,50 +139,78 @@ export default function TopNavbar() {
           </div>
         </div>
 
-        {/* Right: Teacher link + theme + avatar */}
+        {/* ── Right: Teacher badge + theme toggle + avatar ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
 
-          {/* Only visible to teachers */}
+          {/* Teacher badge — only visible to teachers */}
           {isTeacher && (
-            <Link to="/teacher" style={{
-              fontSize: 12, fontWeight: 700, color: '#1D4ED8',
-              textDecoration: 'none', padding: '5px 10px', borderRadius: 7,
-              background: dark ? 'rgba(29,78,216,0.12)' : '#EEF2FF',
-              transition: 'opacity 0.15s',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
+            <Link
+              to="/teacher"
+              className="font-label"
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--secondary)',
+                textDecoration: 'none',
+                padding: '5px 10px',
+                borderRadius: 7,
+                background: 'var(--ncert-chip-bg)',
+                border: '1px solid var(--filter-pill-border)',
+                transition: 'opacity 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = '0.75')}
               onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
             >
               Teacher View
             </Link>
           )}
 
-          <div style={{ width: 1, height: 20, background: tk.border }}></div>
+          {/* Divider */}
+          <div style={{ width: 1, height: 20, background: 'var(--card-border)' }} />
 
-          {/* Dark mode toggle */}
-          <button onClick={toggleTheme}
+          {/* Dark/light toggle */}
+          <button
+            onClick={toggleTheme}
             title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
             style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: tk.toggleBg, border: `1px solid ${tk.border}`,
+              width: 32, height: 32,
+              borderRadius: 8,
+              background: 'var(--surface-container)',
+              border: '1px solid var(--card-border)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', color: tk.body, transition: 'all 0.2s', flexShrink: 0,
+              cursor: 'pointer',
+              color: 'var(--on-surface-variant)',
+              transition: 'all 0.2s',
+              flexShrink: 0,
             }}
-            onMouseEnter={e => { e.currentTarget.style.color = tk.heading; e.currentTarget.style.borderColor = '#1D4ED8'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = tk.body; e.currentTarget.style.borderColor = tk.border; }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--secondary)';
+              e.currentTarget.style.borderColor = 'var(--secondary)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--on-surface-variant)';
+              e.currentTarget.style.borderColor = 'var(--card-border)';
+            }}
           >
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
 
           {/* Profile avatar */}
-          <Link to="/profile" style={{
-            width: 32, height: 32, borderRadius: '50%',
-            border: `2px solid ${tk.border}`,
-            overflow: 'hidden', display: 'block',
-            transition: 'border-color 0.2s', flexShrink: 0,
-          }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = '#1D4ED8')}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = tk.border)}
+          <Link
+            to="/profile"
+            style={{
+              width: 32, height: 32,
+              borderRadius: '50%',
+              border: '2px solid var(--card-border)',
+              overflow: 'hidden',
+              display: 'block',
+              transition: 'border-color 0.2s',
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--secondary)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--card-border)')}
           >
             <img
               src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`}
@@ -157,6 +219,7 @@ export default function TopNavbar() {
             />
           </Link>
         </div>
+
       </div>
     </nav>
   );

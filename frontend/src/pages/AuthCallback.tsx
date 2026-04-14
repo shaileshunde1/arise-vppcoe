@@ -2,17 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
-/**
- * /auth/callback
- *
- * Supabase redirects here after Google OAuth completes.
- * The URL contains a code/token in the hash/query that Supabase
- * exchanges automatically when we call getSession().
- *
- * After session is confirmed:
- * - If the user is brand new (no profile row) → create a stub profile → send to /quiz
- * - If the user already has a profile → send to /dashboard
- */
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'error'>('loading');
@@ -21,12 +10,26 @@ export default function AuthCallback() {
   useEffect(() => {
     const handle = async () => {
       try {
-        // Exchange the OAuth code for a session.
-        // Supabase JS v2 does this automatically on getSession() when
-        // the URL contains the token hash from the redirect.
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // Supabase uses PKCE by default in v2 — OAuth redirect comes back
+        // with ?code= in the URL. We must exchange it explicitly.
+        // Fall back to getSession() for implicit flow (hash tokens).
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
 
-        if (sessionError) throw sessionError;
+        let session = null;
+
+        if (code) {
+          // PKCE flow — exchange the code for a session
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+          session = data.session;
+        } else {
+          // Implicit flow fallback — token is in the URL hash
+          const { data, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          session = data.session;
+        }
+
         if (!session) throw new Error('No session found after Google sign-in.');
 
         const user = session.user;
@@ -40,11 +43,11 @@ export default function AuthCallback() {
 
         if (!existing) {
           // Brand new Google user — create a stub profile
-          // They'll fill in details from the Profile page later
-          const googleName = user.user_metadata?.full_name
-            || user.user_metadata?.name
-            || user.email?.split('@')[0]
-            || 'Student';
+          const googleName =
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.email?.split('@')[0] ||
+            'Student';
 
           await supabase.from('profiles').insert({
             id: user.id,
@@ -57,10 +60,8 @@ export default function AuthCallback() {
             role: 'student',
           });
 
-          // New user → take the diagnostic quiz
           navigate('/quiz', { replace: true });
         } else {
-          // Returning user → go to dashboard (or teacher dashboard)
           if (existing.role === 'teacher') {
             navigate('/teacher', { replace: true });
           } else {
@@ -77,7 +78,6 @@ export default function AuthCallback() {
     handle();
   }, [navigate]);
 
-  // Minimal loading / error UI — matches ARISE dark palette
   if (status === 'error') {
     return (
       <div style={{
@@ -111,7 +111,6 @@ export default function AuthCallback() {
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 14,
     }}>
-      {/* Spinner */}
       <div style={{
         width: 36, height: 36, borderRadius: '50%',
         border: '3px solid #232840',

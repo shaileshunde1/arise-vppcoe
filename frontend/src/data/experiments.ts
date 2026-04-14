@@ -12,7 +12,7 @@ export interface ExperimentVariable {
 export interface Experiment {
   id: string;
   title: string;
-  subject: 'physics' | 'chemistry';
+  subject: 'physics' | 'chemistry' | 'mechanics';
   ncert: string;
   aim: string;
   theory: string;
@@ -158,6 +158,44 @@ export const experiments: Experiment[] = [
     scoring: { completion: 40, accuracy: 40, time: 20 },
   },
   {
+    id: 'newtons-rings',
+    title: "Newton's Rings",
+    subject: 'physics',
+    ncert: 'Class 12 — Chapter 9',
+    aim: "To determine the wavelength of monochromatic light by measuring the diameters of Newton's rings formed by a plano-convex lens on a glass plate.",
+    theory: "Newton's rings are concentric circular interference fringes formed between a plano-convex lens and a flat glass plate. The diameter of the nth dark ring is given by Dn² = 4nλR, where λ is the wavelength of light and R is the radius of curvature of the lens. The wavelength is calculated using λ = (Dm² - Dn²) / (4(m-n)R).",
+    apparatus: ['Plano-convex lens', 'Plane glass plate', 'Sodium/mercury lamp', 'Travelling microscope', 'Magnifying lens', 'Black paper'],
+    safetyNotes: ['Do not touch optical surfaces', 'Handle the lens gently to avoid scratches', 'Never look directly into the light source'],
+    procedure: [
+      'Place the plane glass plate on the base of the microscope stage.',
+      'Place the plano-convex lens (curved side down) on the glass plate.',
+      'Illuminate with monochromatic light from the sodium lamp at 45° via a glass plate reflector.',
+      'Focus the travelling microscope on the ring system until rings are sharp.',
+      'Move the microscope crosswire to the left edge of a chosen dark ring.',
+      'Record the left vernier reading, then move to the right edge and record the right reading.',
+      'Calculate the diameter Dn = right reading − left reading.',
+      'Repeat for rings n = 1 to 10.',
+      'Plot Dn² vs n; the slope gives 4λR, hence calculate λ.',
+    ],
+    variables: [
+      { id: 'radius', name: 'Radius of Curvature R', min: 50, max: 200, step: 10, defaultValue: 100, unit: 'cm' },
+      {
+        id: 'source',
+        name: 'Light Source',
+        defaultValue: 'sodium',
+        unit: '',
+        options: [
+          { value: 'sodium',         label: 'Sodium lamp (589.3 nm)'    },
+          { value: 'mercury-green',  label: 'Mercury green (546.1 nm)'  },
+          { value: 'mercury-violet', label: 'Mercury violet (404.7 nm)' },
+        ],
+      },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'Ring No. vs Dn² Graph', x: 'Ring Number n', y: 'Dn² (cm²)' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  {
     id: 'acid-base-titration',
     title: 'Acid-Base Titration',
     subject: 'chemistry',
@@ -229,8 +267,6 @@ export const experiments: Experiment[] = [
     ],
     variables: [
       {
-        // ── FIXED: id is now 'metal', values are numeric strings 0–6
-        // matching the metals array index in FlameTest.tsx
         id: 'metal',
         name: 'Metal Salt',
         defaultValue: '0',
@@ -251,8 +287,8 @@ export const experiments: Experiment[] = [
         defaultValue: '0',
         unit: '',
         options: [
-          { value: '0', label: 'No filter'         },
-          { value: '1', label: 'Cobalt blue glass'  },
+          { value: '0', label: 'No filter'        },
+          { value: '1', label: 'Cobalt blue glass' },
         ],
       },
     ],
@@ -279,14 +315,14 @@ export const experiments: Experiment[] = [
       'Add NO₂ stress and record the backward shift.',
     ],
     variables: [
-      { id: 'temperature', name: 'Temperature', min: 0,   max: 100, step: 5,   defaultValue: 25,  unit: '°C'  },
-      { id: 'pressure',    name: 'Pressure',    min: 0.5, max: 5,   step: 0.5, defaultValue: 1,   unit: 'atm' },
+      { id: 'temperature', name: 'Temperature', min: 0,   max: 100, step: 5,   defaultValue: 25, unit: '°C'  },
+      { id: 'pressure',    name: 'Pressure',    min: 0.5, max: 5,   step: 0.5, defaultValue: 1,  unit: 'atm' },
       {
         id: 'stress', name: 'Concentration Stress', defaultValue: '0', unit: '',
         options: [
-          { value: '0', label: 'No stress'     },
-          { value: '1', label: 'Add N₂O₄'      },
-          { value: '2', label: 'Add NO₂'       },
+          { value: '0', label: 'No stress' },
+          { value: '1', label: 'Add N₂O₄' },
+          { value: '2', label: 'Add NO₂'  },
         ],
       },
     ],
@@ -316,25 +352,57 @@ export const experiments: Experiment[] = [
       {
         id: 'mixture', name: 'Sample Mixture', defaultValue: '0', unit: '',
         options: [
-          { value: '0', label: 'Black Ink'       },
-          { value: '1', label: 'Green Food Dye'  },
-          { value: '2', label: 'Plant Extract'   },
-          { value: '3', label: 'Marker Ink'      },
+          { value: '0', label: 'Black Ink'      },
+          { value: '1', label: 'Green Food Dye' },
+          { value: '2', label: 'Plant Extract'  },
+          { value: '3', label: 'Marker Ink'     },
         ],
       },
       {
         id: 'solvent', name: 'Solvent System', defaultValue: '0', unit: '',
         options: [
-          { value: '0', label: 'Water (polar)'          },
-          { value: '1', label: 'Ethanol (mid-polar)'    },
-          { value: '2', label: 'Acetone (mid-polar)'    },
-          { value: '3', label: 'Hexane (non-polar)'     },
+          { value: '0', label: 'Water (polar)'       },
+          { value: '1', label: 'Ethanol (mid-polar)' },
+          { value: '2', label: 'Acetone (mid-polar)' },
+          { value: '3', label: 'Hexane (non-polar)'  },
         ],
       },
       { id: 'runtime', name: 'Run Time', min: 0, max: 15, step: 1, defaultValue: 0, unit: 'min' },
     ],
     chartType: 'bar',
     chartLabel: { title: 'Rf Values', x: 'Component', y: 'Rf Value' },
+    scoring: { completion: 40, accuracy: 40, time: 20 },
+  },
+  // ── MECHANICS ──────────────────────────────────────────────────
+  {
+    id: 'simply-supported-beam',
+    title: 'Simply Supported Beam',
+    subject: 'mechanics',
+    ncert: 'Class 11 — Chapter 9',
+    aim: 'To verify the principle of moments for a simply supported beam and determine the unknown weight by balancing known loads.',
+    theory: 'A simply supported beam rests on two supports. For equilibrium, the sum of clockwise moments equals the sum of anticlockwise moments about any point. Moment = Force × perpendicular distance. ΣM = 0 and ΣF = 0 at equilibrium.',
+    apparatus: ['Wooden beam (1m)', 'Two knife-edge supports', 'Slotted weights (5×100g)', 'Spring balance', 'Metre scale', 'Thread', 'Spirit level'],
+    safetyNotes: [
+      'Ensure supports are stable before loading the beam',
+      'Do not exceed the beam\'s rated load capacity',
+      'Keep hands clear when adding or removing weights',
+    ],
+    procedure: [
+      'Place the beam horizontally on two knife-edge supports at equal distances from the ends.',
+      'Use the spirit level to confirm the beam is perfectly horizontal.',
+      'Hang a known weight W1 at a measured distance d1 from the left support.',
+      'Hang a second known weight W2 at distance d2 from the left support.',
+      'Adjust positions until the beam is balanced; verify with the spirit level.',
+      'Record all distances and weights in the observation table.',
+      'Calculate moments about the left support and verify clockwise = anticlockwise.',
+    ],
+    variables: [
+      { id: 'load1', name: 'Load W1',     min: 100, max: 500, step: 50, defaultValue: 200, unit: 'g'  },
+      { id: 'dist1', name: 'Distance d1', min: 10,  max: 80,  step: 5,  defaultValue: 30,  unit: 'cm' },
+      { id: 'load2', name: 'Load W2',     min: 100, max: 500, step: 50, defaultValue: 300, unit: 'g'  },
+    ],
+    chartType: 'scatter',
+    chartLabel: { title: 'Moments Verification', x: 'Clockwise Moment (g·cm)', y: 'Anticlockwise Moment (g·cm)' },
     scoring: { completion: 40, accuracy: 40, time: 20 },
   },
 ];

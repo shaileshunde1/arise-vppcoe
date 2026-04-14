@@ -25,14 +25,32 @@ function RootRedirect() {
   const [session, setSession] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(!!session);
+    // Use onAuthStateChange as primary — it fires reliably after OAuth exchange
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(!!s);
       setChecking(false);
     });
+
+    // getSession as immediate fallback for already-logged-in users
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (s) {
+        setSession(true);
+        setChecking(false);
+      }
+      // If no session, onAuthStateChange will fire and resolve it
+      // No setTimeout needed here — we just wait for it
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  // Show nothing while checking — avoids flash of landing page for logged-in users
   if (checking) return null;
+
+  // Logged in → go straight to dashboard
   if (session) return <Navigate to="/dashboard" replace />;
+
+  // Not logged in → show landing page
   return <LandingPage />;
 }
 

@@ -17,24 +17,21 @@ export default function SimplePendulum({ varState, addObservation }: ApparatusPr
   
   const { setValidationError, hasAdjustedSlider } = useLabStore();
 
-  const length = Number(varState.length || 50); // 10 to 150 cm
-  const mass = Number(varState.mass || 50);     // 10 to 200 g
-  const angle = Number(varState.angle || 10);   // 5 to 15 deg
+  const length = Number(varState.length || 50);
+  const mass = Number(varState.mass || 50);
+  const angle = Number(varState.angle || 10);
 
-  // Real accurate period: T = 2π√(L/g)
-  // L in meters = length / 100.
   const T = 2 * Math.PI * Math.sqrt((length / 100) / 9.8);
   const T10 = T * 10;
 
   const prevAngleRef = useRef<number | null>(null);
   const prevLengthRef = useRef<number | null>(null);
+  const hasRecordedRef = useRef(false);
 
   useEffect(() => {
     const angleChanged = angle !== prevAngleRef.current;
     const lengthChanged = length !== prevLengthRef.current;
-
     if (!isPlaying && (angleChanged || lengthChanged)) {
-      // static angle
       gsap.set(pendulumRef.current, { rotation: angle, transformOrigin: 'top center' });
       setTimer("0.00");
       prevAngleRef.current = angle;
@@ -53,10 +50,9 @@ export default function SimplePendulum({ varState, addObservation }: ApparatusPr
     }
     if (isPlaying) return;
     setIsPlaying(true);
+    hasRecordedRef.current = false;
     
-    // Animate the swing (one full swing left and right takes Time T)
     const ctx = gsap.context(() => {
-      // Start at +angle, go to -angle and back
       gsap.to(pendulumRef.current, {
         rotation: -angle,
         duration: T / 2,
@@ -65,7 +61,6 @@ export default function SimplePendulum({ varState, addObservation }: ApparatusPr
         repeat: -1
       });
       
-      // Counter for 10 oscillations
       let secondsPassed = 0;
       const tId = setInterval(() => {
         secondsPassed += 0.05;
@@ -91,6 +86,11 @@ export default function SimplePendulum({ varState, addObservation }: ApparatusPr
       setValidationError("Early Recording", "Timer stopped before one full oscillation. The pendulum must complete its full designated cycle.", "Wait for a complete left-right-left swing before recording.");
       return;
     }
+    if (hasRecordedRef.current) {
+      setValidationError("Already Recorded", "This observation has already been saved.", "Release the bob again with a different length to record a new observation.");
+      return;
+    }
+    hasRecordedRef.current = true;
     
     const timeT = Number((T10 / 10).toFixed(3));
     const tSquare = Number((timeT * timeT).toFixed(3));
@@ -105,85 +105,95 @@ export default function SimplePendulum({ varState, addObservation }: ApparatusPr
   };
 
   const calculateG = () => {
-    // g = 4π²L/T² -> L in metrics
     const timeT = T10 / 10;
     const tSq = timeT * timeT;
     const g = (4 * Math.PI * Math.PI * (length / 100)) / tSq;
     setCalculatedG(g);
   };
 
-  // Convert mm to pixels scaled for the SVG 500x500 box
-  // Max length 150cm = 1500mm -> mapped to 400 SVG units
-  const stringLenSvg = (length / 150) * 400;
-  // Bob radius scales slightly with mass: 10g to 200g
+  // Scale string length so the bob never exits the SVG viewBox (max ~380px at length=150)
+  const stringLenSvg = (length / 150) * 380;
   const bobRadius = 15 + (mass / 200) * 15;
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center relative">
-      <svg width="100%" height="80%" viewBox="0 0 500 500" className="overflow-visible">
-        <defs>
-          <radialGradient id="bobGradient" cx="30%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#fff" />
-            <stop offset="100%" stopColor="#475569" />
-          </radialGradient>
-        </defs>
+    // Flex column: SVG grows to fill available space, controls are a fixed-height row below
+    <div className="w-full h-full flex flex-col items-center" style={{ minHeight: 0 }}>
 
-        {/* Rigid Stand */}
-        <line x1="150" y1="20" x2="350" y2="20" stroke="#334155" strokeWidth="8" strokeLinecap="round" />
-        <rect x="240" y="20" width="20" height="20" fill="#cbd5e1" rx="4" />
-        <circle cx="250" cy="30" r="4" fill="#1e293b" /> {/* Pivot point */}
+      {/* ── Pendulum canvas — takes all remaining vertical space ── */}
+      <div className="w-full flex-1 relative" style={{ minHeight: 0 }}>
+        <svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 500 420"
+          preserveAspectRatio="xMidYMid meet"
+          style={{ display: 'block' }}
+        >
+          <defs>
+            <radialGradient id="bobGradient" cx="30%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#fff" />
+              <stop offset="100%" stopColor="#475569" />
+            </radialGradient>
+          </defs>
 
-        {/* Pendulum Group */}
-        <g ref={pendulumRef} transform="translate(250, 30)">
-          {/* String */}
-          <line x1="0" y1="0" x2="0" y2={stringLenSvg} stroke="#e2e8f0" strokeWidth="2" />
-          {/* Bob */}
-          <circle cx="0" cy={stringLenSvg} r={bobRadius} fill="url(#bobGradient)" />
-        </g>
-      </svg>
+          {/* Rigid Stand */}
+          <line x1="150" y1="20" x2="350" y2="20" stroke="#334155" strokeWidth="8" strokeLinecap="round" />
+          <rect x="240" y="20" width="20" height="20" fill="#cbd5e1" rx="4" />
+          <circle cx="250" cy="30" r="4" fill="#1e293b" />
 
-      {/* Embedded Controls */}
-      <div className="absolute top-4 left-4 bg-black/60 p-4 rounded-lg border border-gray-700 flex flex-col gap-3 min-w-[200px]">
-        <div className="text-center font-mono text-2xl text-accent-cyan font-bold tabular-nums border-b border-gray-700 pb-2 mb-2">
+          {/* Pendulum Group */}
+          <g ref={pendulumRef} transform="translate(250, 30)">
+            <line x1="0" y1="0" x2="0" y2={stringLenSvg} stroke="#e2e8f0" strokeWidth="2" />
+            <circle cx="0" cy={stringLenSvg} r={bobRadius} fill="url(#bobGradient)" />
+          </g>
+        </svg>
+      </div>
+
+      {/* ── Controls — fixed height, always visible below the canvas ── */}
+      <div
+        className="w-full shrink-0 bg-black/60 border-t border-gray-700 px-4 py-3 flex flex-col gap-2"
+        style={{ maxWidth: 360, margin: '0 auto', borderRadius: '0 0 8px 8px' }}
+      >
+        {/* Timer */}
+        <div className="text-center font-mono text-xl text-accent-cyan font-bold tabular-nums">
           ⏱ {timer}s
         </div>
-        
-        <button 
-          onClick={handleRelease} 
-          disabled={isPlaying}
-          className="w-full py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30 rounded font-bold disabled:opacity-50 transition-colors"
-        >
-          {isPlaying ? 'Swinging...' : 'Release Bob'}
-        </button>
 
-        <button 
-          onClick={recordObservation}
-          className="w-full py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold transition-colors"
-        >
-          Record Observation
-        </button>
-        
+        {/* Action buttons in a row to save vertical space */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleRelease}
+            disabled={isPlaying}
+            className="flex-1 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30 rounded font-bold disabled:opacity-50 transition-colors text-sm"
+          >
+            {isPlaying ? 'Swinging…' : 'Release Bob'}
+          </button>
+
+          <button
+            onClick={recordObservation}
+            className="flex-1 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/50 hover:bg-blue-500/30 rounded font-bold transition-colors text-sm"
+          >
+            Record
+          </button>
+        </div>
+
+        {/* Calculate g — only shown after 3 readings */}
         {readingsCount >= 3 && (
-           <button 
-             onClick={calculateG}
-             className="w-full py-2 mt-2 bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30 rounded font-bold transition-colors"
-           >
-             Calculate 'g'
-           </button>
+          <button
+            onClick={calculateG}
+            className="w-full py-2 bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/30 rounded font-bold transition-colors text-sm"
+          >
+            Calculate 'g'
+          </button>
         )}
-        
+
         {calculatedG && (
-          <div className="mt-2 text-center text-sm">
+          <div className="text-center text-sm">
             <span className="text-gray-400">g = </span>
             <span className="text-white font-mono">{calculatedG.toFixed(2)} m/s²</span>
           </div>
         )}
       </div>
-      
-      {/* Information Overlay */}
-      <div className="absolute bottom-4 right-4 bg-black/60 px-3 py-2 rounded text-xs text-gray-400 border border-gray-800">
-        Angle: {angle}°, Mass: {mass}g (Independent of Period)
-      </div>
+
     </div>
   );
 }

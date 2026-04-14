@@ -21,34 +21,11 @@ export default function LabJournal() {
     journalEntries[0] ?? null
   );
 
-  
-
   const displayEntry = selectedEntry
     ? journalEntries.find(e => e.id === selectedEntry.id) ?? journalEntries[0] ?? null
     : journalEntries[0] ?? null;
 
-  const tk = {
-    pageBg:     dark ? '#0F111A' : '#F0EEE9',
-    sidebarBg:  dark ? '#161929' : '#FAFAF8',
-    cardBg:     dark ? '#1C1F2E' : '#FFFFFF',
-    border:     dark ? '#232840' : '#E8E5DF',
-    divider:    dark ? '#1E2235' : '#F0EDE8',
-    heading:    dark ? '#EDEDF0' : '#111111',
-    body:       dark ? '#8890A4' : '#666666',
-    muted:      dark ? '#525870' : '#AAAAAA',
-    alt:        dark ? '#232840' : '#F5F3EE',
-    hoverBg:    dark ? 'rgba(255,255,255,0.03)' : '#F5F3EE',
-    activeCard: dark ? 'rgba(29,78,216,0.12)' : '#EEF2FF',
-    activeBorder: dark ? 'rgba(29,78,216,0.4)' : '#BFDBFE',
-    blueBg:     dark ? 'rgba(29,78,216,0.12)' : '#EEF2FF',
-    blueText:   '#1D4ED8',
-    shadow:     dark ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
-    tableHead:  dark ? '#161929' : '#F5F3EE',
-    tableRow:   dark ? 'rgba(255,255,255,0.02)' : '#FAFAF8',
-    cyan:       dark ? '#00d4ff' : '#0284C7',
-  };
-
-  // PDF export: inject a print stylesheet, trigger window.print(), then clean up
+  // PDF export logic — unchanged
   const handleExportPDF = () => {
     if (!displayEntry) return;
     setExporting(true);
@@ -56,9 +33,7 @@ export default function LabJournal() {
     const styleId = 'arise-print-style';
     if (document.getElementById(styleId)) document.getElementById(styleId)!.remove();
 
-    const obsHeaders = displayEntry.observations.length > 0
-      ? Object.keys(displayEntry.observations[0])
-      : [];
+    const obsHeaders = displayEntry.observations.length > 0 ? Object.keys(displayEntry.observations[0]) : [];
 
     const obsRows = displayEntry.observations.map((row, i) => `
       <tr>
@@ -78,13 +53,9 @@ export default function LabJournal() {
     const printHTML = `
       <div id="arise-print-root" style="display:none;position:fixed;top:0;left:0;width:100%;z-index:99999;background:#fff">
         <div style="max-width:720px;margin:0 auto;padding:40px 48px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111">
-          
-          <!-- Header -->
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid #111">
             <div>
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#666;margin-bottom:6px">
-                ARISE — Virtual Science Lab
-              </div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#666;margin-bottom:6px">ARISE — Virtual Science Lab</div>
               <h1 style="font-size:24px;font-weight:800;margin:0 0 8px;letter-spacing:-0.5px">${displayEntry.lab}</h1>
               <div style="font-size:13px;color:#666;display:flex;gap:20px">
                 <span>📅 ${displayEntry.date}</span>
@@ -97,37 +68,21 @@ export default function LabJournal() {
               <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#888;margin-top:3px">pts scored</div>
             </div>
           </div>
-
-          <!-- Observations -->
           <div style="margin-bottom:32px">
-            <h2 style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#444;margin-bottom:12px;display:flex;align-items:center;gap:8px">
-              <span style="display:inline-block;width:3px;height:16px;background:#1D4ED8;border-radius:2px"></span>
-              Recorded Observations
-            </h2>
+            <h2 style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#444;margin-bottom:12px">Recorded Observations</h2>
             ${obsHeaders.length === 0 ? `<p style="color:#888;font-size:13px">No observations recorded.</p>` : `
             <table style="width:100%;border-collapse:collapse;font-size:13px">
-              <thead>
-                <tr style="background:#F5F3EE">
-                  <th style="padding:9px 12px;text-align:left;font-family:monospace;color:#888;font-weight:700;border-bottom:1px solid #ddd">#</th>
-                  ${obsHeaders.map(h => `<th style="padding:9px 12px;text-align:left;color:#111;font-weight:700;border-bottom:1px solid #ddd">${h}</th>`).join('')}
-                </tr>
-              </thead>
+              <thead><tr style="background:#F5F3EE">
+                <th style="padding:9px 12px;text-align:left;font-family:monospace;color:#888;font-weight:700;border-bottom:1px solid #ddd">#</th>
+                ${obsHeaders.map(h => `<th style="padding:9px 12px;text-align:left;color:#111;font-weight:700;border-bottom:1px solid #ddd">${h}</th>`).join('')}
+              </tr></thead>
               <tbody>${obsRows}</tbody>
             </table>`}
           </div>
-
-          <!-- Procedure -->
           <div>
-            <h2 style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#444;margin-bottom:12px;display:flex;align-items:center;gap:8px">
-              <span style="display:inline-block;width:3px;height:16px;background:#7C3AED;border-radius:2px"></span>
-              Procedure Completion
-            </h2>
-            <div style="background:#F5F3EE;border-radius:10px;padding:14px 16px;font-size:13px;color:#444">
-              ${stepsText}
-            </div>
+            <h2 style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#444;margin-bottom:12px">Procedure Completion</h2>
+            <div style="background:#F5F3EE;border-radius:10px;padding:14px 16px;font-size:13px;color:#444">${stepsText}</div>
           </div>
-
-          <!-- Footer -->
           <div style="margin-top:48px;padding-top:16px;border-top:1px solid #eee;font-size:11px;color:#aaa;display:flex;justify-content:space-between">
             <span>ARISE Virtual Science Lab — Lab Journal Export</span>
             <span>Printed ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
@@ -136,7 +91,6 @@ export default function LabJournal() {
       </div>
     `;
 
-    // Inject print overlay + CSS
     const wrapper = document.createElement('div');
     wrapper.id = 'arise-print-wrapper';
     wrapper.innerHTML = printHTML;
@@ -154,10 +108,8 @@ export default function LabJournal() {
     `;
     document.head.appendChild(style);
 
-    // Short delay so DOM paints, then print
     setTimeout(() => {
       window.print();
-      // Cleanup after print dialog closes
       setTimeout(() => {
         document.getElementById('arise-print-wrapper')?.remove();
         document.getElementById(styleId)?.remove();
@@ -167,36 +119,42 @@ export default function LabJournal() {
   };
 
   return (
-    <div style={{
-      display: 'flex', height: '100%', minHeight: 'calc(100vh - 58px)',
-      background: tk.pageBg, transition: 'background 0.3s',
+    <div className="arise-journal-layout" style={{
+      display: 'flex', flexDirection: 'column', height: '100%', minHeight: 'calc(100vh - 58px)',
+      background: 'var(--surface)', transition: 'background 0.3s',
     }}>
 
-      {/* Sidebar */}
-      <div style={{
-        width: 300, flexShrink: 0,
-        background: tk.sidebarBg, borderRight: `1px solid ${tk.border}`,
+      {/* ── Sidebar ───────────────────────────────────────────── */}
+      <div className="arise-journal-sidebar" style={{
+        width: '100%', flexShrink: 0,
+        background: 'var(--surface-container-low)',
+        borderBottom: '1px solid rgba(66,73,79,0.2)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        maxHeight: 300,
         transition: 'background 0.3s',
       }}>
         {/* Sidebar header */}
         <div style={{
-          padding: '16px 18px', borderBottom: `1px solid ${tk.border}`,
+          padding: '20px 20px', borderBottom: '1px solid rgba(66,73,79,0.2)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: tk.heading }}>Lab Journal</div>
-            <div style={{ fontSize: 11, color: tk.muted, marginTop: 2 }}>
-              {journalEntries.length} {journalEntries.length === 1 ? 'entry' : 'entries'}
+            <span className="font-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--secondary)', display: 'block', marginBottom: 4 }}>
+              Lab Journal
+            </span>
+            <div className="serif" style={{ fontSize: 18, fontWeight: 300, color: 'var(--primary)' }}>
+              {journalEntries.length} {journalEntries.length === 1 ? 'Entry' : 'Entries'}
             </div>
           </div>
-          <Link to="/dashboard" style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            fontSize: 12, fontWeight: 600, color: tk.muted, textDecoration: 'none',
-            transition: 'color 0.2s',
-          }}
-            onMouseEnter={e => (e.currentTarget.style.color = tk.heading)}
-            onMouseLeave={e => (e.currentTarget.style.color = tk.muted)}
+          <Link to="/dashboard"
+            className="font-label"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+              color: 'var(--on-surface-variant)', textDecoration: 'none', transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--primary)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--on-surface-variant)')}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M19 12H5M12 5l-7 7 7 7"/>
@@ -209,16 +167,19 @@ export default function LabJournal() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
           {journalEntries.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px 16px' }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>🧪</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: tk.heading, marginBottom: 6 }}>No entries yet</div>
-              <div style={{ fontSize: 12, color: tk.muted, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 32, marginBottom: 16 }}>🧪</div>
+              <h3 className="serif" style={{ fontSize: 18, fontWeight: 300, color: 'var(--primary)', marginBottom: 8 }}>No entries yet</h3>
+              <p className="font-body" style={{ fontSize: 13, color: 'var(--on-surface-variant)', lineHeight: 1.6, marginBottom: 20 }}>
                 Complete a lab experiment and save your observations to see them here.
-              </div>
-              <Link to="/labs" style={{
-                display: 'inline-block', marginTop: 16, padding: '8px 16px',
-                background: '#1D4ED8', color: '#fff', fontSize: 12, fontWeight: 700,
-                borderRadius: 8, textDecoration: 'none',
-              }}>
+              </p>
+              <Link to="/labs"
+                className="font-label"
+                style={{
+                  display: 'inline-block', padding: '9px 20px',
+                  background: 'var(--secondary)', color: 'var(--surface)',
+                  fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+                  borderRadius: 8, textDecoration: 'none',
+                }}>
                 Browse Labs
               </Link>
             </div>
@@ -229,29 +190,30 @@ export default function LabJournal() {
                 return (
                   <div key={entry.id} onClick={() => setSelectedEntry(entry)}
                     style={{
-                      padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
-                      border: `1px solid ${isActive ? tk.activeBorder : tk.border}`,
-                      background: isActive ? tk.activeCard : 'transparent',
-                      transition: 'all 0.15s',
+                      padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
+                      border: `1px solid ${isActive ? 'rgba(135,160,192,0.4)' : 'rgba(66,73,79,0.15)'}`,
+                      background: isActive ? 'rgba(135,160,192,0.08)' : 'transparent',
+                      transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = tk.hoverBg; }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--surface-container)'; }}
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: tk.heading, flex: 1, marginRight: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div className="font-label" style={{
+                        fontSize: 13, fontWeight: 700, color: 'var(--on-surface)',
+                        flex: 1, marginRight: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
                         {entry.lab}
                       </div>
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-                        padding: '2px 7px', borderRadius: 999,
-                        background: dark ? 'rgba(5,150,105,0.15)' : '#ECFDF5',
-                        color: dark ? '#6EE7B7' : '#065F46',
-                        flexShrink: 0,
+                      <span className="font-label" style={{
+                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
+                        padding: '2px 8px', borderRadius: 999, flexShrink: 0,
+                        background: 'rgba(5,150,105,0.15)', color: '#6EE7B7',
                       }}>Saved</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: tk.muted }}>
-                      <span>{entry.date}</span>
-                      <span style={{ fontWeight: 700, color: isActive ? tk.blueText : tk.muted }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span className="font-label" style={{ fontSize: 11, color: 'var(--on-surface-variant)' }}>{entry.date}</span>
+                      <span className="font-label" style={{ fontSize: 11, fontWeight: 700, color: isActive ? 'var(--secondary)' : 'var(--on-surface-variant)' }}>
                         {entry.score} pts
                       </span>
                     </div>
@@ -263,89 +225,75 @@ export default function LabJournal() {
         </div>
       </div>
 
-      {/* Main content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '28px' }}>
+      {/* ── Main Content ──────────────────────────────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(16px, 4vw, 32px)' }}>
         {!displayEntry ? (
           <div style={{
             height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: tk.muted, fontSize: 14,
+            color: 'var(--on-surface-variant)',
           }}>
-            Select an entry from the list to view details.
+            <p className="font-body" style={{ fontSize: 14 }}>Select an entry from the list to view details.</p>
           </div>
         ) : (
           <motion.div
             key={displayEntry.id}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             style={{ maxWidth: 780, margin: '0 auto' }}
           >
-            {/* Entry header card */}
+            {/* ── Entry Header ───────────────────────────────── */}
             <div style={{
-              background: tk.cardBg, border: `1px solid ${tk.border}`,
-              borderRadius: 16, padding: '24px 28px', marginBottom: 16,
-              boxShadow: tk.shadow,
+              background: 'var(--surface-container)', border: '1px solid rgba(66,73,79,0.2)',
+              borderRadius: 16, padding: '28px 32px', marginBottom: 16,
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
                 <div>
-                  <h1 style={{ fontSize: 22, fontWeight: 800, color: tk.heading, marginBottom: 8, letterSpacing: '-0.3px' }}>
+                  <span className="font-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--secondary)', display: 'block', marginBottom: 8 }}>
+                    Lab Entry
+                  </span>
+                  <h1 className="serif" style={{ fontSize: 28, fontWeight: 300, color: 'var(--primary)', marginBottom: 12, letterSpacing: '-0.02em' }}>
                     {displayEntry.lab}
                   </h1>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13, color: tk.muted }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                      </svg>
-                      {displayEntry.date}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      {formatTime(displayEntry.timeSeconds)}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18"/>
-                      </svg>
-                      {displayEntry.observations.length} observations
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                    {[
+                      { icon: <path d="M3 9h18M9 21V9M15 21V9M3 3h18v18H3z"/>, text: displayEntry.date },
+                      { icon: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, text: formatTime(displayEntry.timeSeconds) },
+                      { icon: <><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18"/></>, text: `${displayEntry.observations.length} observations` },
+                    ].map((item, i) => (
+                      <span key={i} className="font-label" style={{ fontSize: 12, color: 'var(--on-surface-variant)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{item.icon}</svg>
+                        {item.text}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
                   {/* Score */}
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 36, fontWeight: 800, color: tk.blueText, lineHeight: 1, fontFamily: 'monospace' }}>
+                    <div className="serif" style={{ fontSize: 40, fontWeight: 300, color: 'var(--secondary)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                       {displayEntry.score}
                     </div>
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: tk.muted, marginTop: 3 }}>
+                    <div className="font-label" style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--on-surface-variant)', marginTop: 4 }}>
                       pts scored
                     </div>
                   </div>
 
-                  {/* Export PDF button */}
-                  <button
-                    onClick={handleExportPDF}
-                    disabled={exporting}
+                  {/* Export PDF */}
+                  <button onClick={handleExportPDF} disabled={exporting}
+                    className="font-label"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 7,
-                      padding: '8px 14px', borderRadius: 9,
-                      background: exporting
-                        ? (dark ? 'rgba(255,255,255,0.06)' : '#F0EEE9')
-                        : (dark ? 'rgba(29,78,216,0.15)' : '#EEF2FF'),
-                      border: `1px solid ${dark ? 'rgba(29,78,216,0.3)' : '#BFDBFE'}`,
-                      color: exporting ? tk.muted : tk.blueText,
-                      fontSize: 12, fontWeight: 700,
-                      cursor: exporting ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.15s',
+                      padding: '9px 16px', borderRadius: 10,
+                      background: exporting ? 'var(--surface-container-high)' : 'rgba(135,160,192,0.12)',
+                      border: '1px solid rgba(135,160,192,0.3)',
+                      color: exporting ? 'var(--on-surface-variant)' : 'var(--secondary)',
+                      fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                      cursor: exporting ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
                     }}
-                    onMouseEnter={e => {
-                      if (!exporting) e.currentTarget.style.background = dark ? 'rgba(29,78,216,0.22)' : '#DBEAFE';
-                    }}
-                    onMouseLeave={e => {
-                      if (!exporting) e.currentTarget.style.background = dark ? 'rgba(29,78,216,0.15)' : '#EEF2FF';
-                    }}
+                    onMouseEnter={e => { if (!exporting) e.currentTarget.style.background = 'rgba(135,160,192,0.2)'; }}
+                    onMouseLeave={e => { if (!exporting) e.currentTarget.style.background = 'rgba(135,160,192,0.12)'; }}
                   >
                     {exporting ? (
                       <>
@@ -367,31 +315,33 @@ export default function LabJournal() {
               </div>
             </div>
 
-            {/* Observations table */}
+            {/* ── Observations Table ─────────────────────────── */}
             <div style={{
-              background: tk.cardBg, border: `1px solid ${tk.border}`,
-              borderRadius: 16, overflow: 'hidden', marginBottom: 16, boxShadow: tk.shadow,
+              background: 'var(--surface-container)', border: '1px solid rgba(66,73,79,0.2)',
+              borderRadius: 16, overflow: 'hidden', marginBottom: 16,
             }}>
               <div style={{
-                padding: '14px 20px', borderBottom: `1px solid ${tk.border}`,
+                padding: '16px 24px', borderBottom: '1px solid rgba(66,73,79,0.15)',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}>
-                <div style={{ width: 3, height: 16, background: tk.blueText, borderRadius: 999 }}></div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: tk.heading }}>Recorded Observations</div>
+                <div style={{ width: 3, height: 16, background: 'var(--secondary)', borderRadius: 999 }} />
+                <span className="font-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--on-surface)' }}>
+                  Recorded Observations
+                </span>
               </div>
 
               {displayEntry.observations.length === 0 ? (
-                <div style={{ padding: '24px 20px', fontSize: 13, color: tk.muted }}>
-                  No observations were recorded for this session.
+                <div style={{ padding: '28px 24px' }}>
+                  <p className="font-body" style={{ fontSize: 13, color: 'var(--on-surface-variant)' }}>No observations were recorded for this session.</p>
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
-                      <tr style={{ background: tk.tableHead }}>
-                        <th style={{ padding: '10px 16px', textAlign: 'left', color: tk.muted, fontFamily: 'monospace', fontWeight: 700, width: 40, borderBottom: `1px solid ${tk.border}` }}>#</th>
+                      <tr style={{ background: 'var(--surface-container-low)' }}>
+                        <th className="font-label" style={{ padding: '11px 18px', textAlign: 'left', color: 'var(--on-surface-variant)', fontWeight: 700, width: 40, borderBottom: '1px solid rgba(66,73,79,0.15)', fontSize: 11, letterSpacing: '0.06em' }}>#</th>
                         {Object.keys(displayEntry.observations[0]).map(key => (
-                          <th key={key} style={{ padding: '10px 16px', textAlign: 'left', color: tk.heading, fontWeight: 700, borderBottom: `1px solid ${tk.border}` }}>
+                          <th key={key} className="font-label" style={{ padding: '11px 18px', textAlign: 'left', color: 'var(--on-surface)', fontWeight: 700, borderBottom: '1px solid rgba(66,73,79,0.15)', fontSize: 11, letterSpacing: '0.06em' }}>
                             {key}
                           </th>
                         ))}
@@ -400,13 +350,13 @@ export default function LabJournal() {
                     <tbody>
                       {displayEntry.observations.map((row, i) => (
                         <tr key={i}
-                          style={{ borderBottom: i < displayEntry.observations.length - 1 ? `1px solid ${tk.divider}` : 'none', transition: 'background 0.15s' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = tk.hoverBg)}
+                          style={{ borderBottom: i < displayEntry.observations.length - 1 ? '1px solid rgba(66,73,79,0.08)' : 'none', transition: 'background 0.15s' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-container-high)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                         >
-                          <td style={{ padding: '10px 16px', color: tk.muted, fontFamily: 'monospace' }}>{i + 1}</td>
+                          <td className="font-label" style={{ padding: '11px 18px', color: 'var(--on-surface-variant)', fontFamily: 'monospace' }}>{i + 1}</td>
                           {Object.values(row).map((val: any, j) => (
-                            <td key={j} style={{ padding: '10px 16px', color: tk.cyan, fontFamily: 'monospace', fontWeight: 600 }}>
+                            <td key={j} className="font-label" style={{ padding: '11px 18px', color: 'var(--secondary)', fontFamily: 'monospace', fontWeight: 600 }}>
                               {typeof val === 'number' ? val.toFixed(3) : val}
                             </td>
                           ))}
@@ -418,38 +368,37 @@ export default function LabJournal() {
               )}
             </div>
 
-            {/* Procedure completion */}
+            {/* ── Procedure Completion ──────────────────────── */}
             <div style={{
-              background: tk.cardBg, border: `1px solid ${tk.border}`,
-              borderRadius: 16, overflow: 'hidden', boxShadow: tk.shadow,
+              background: 'var(--surface-container)', border: '1px solid rgba(66,73,79,0.2)',
+              borderRadius: 16, overflow: 'hidden',
             }}>
               <div style={{
-                padding: '14px 20px', borderBottom: `1px solid ${tk.border}`,
+                padding: '16px 24px', borderBottom: '1px solid rgba(66,73,79,0.15)',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}>
-                <div style={{ width: 3, height: 16, background: '#7C3AED', borderRadius: 999 }}></div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: tk.heading }}>Procedure Completion</div>
+                <div style={{ width: 3, height: 16, background: 'var(--primary)', borderRadius: 999 }} />
+                <span className="font-label" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--on-surface)' }}>
+                  Procedure Completion
+                </span>
               </div>
-              <div style={{ padding: '16px 20px' }}>
+              <div style={{ padding: '20px 24px' }}>
                 <div style={{
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  background: tk.alt, borderRadius: 10, padding: '14px 16px',
+                  display: 'flex', alignItems: 'center', gap: 16,
+                  background: 'var(--surface-container-low)', borderRadius: 12, padding: '16px 20px',
                 }}>
                   <div style={{
-                    width: 40, height: 40, borderRadius: '50%',
-                    background: displayEntry.completedSteps.length > 0
-                      ? (dark ? 'rgba(5,150,105,0.15)' : '#ECFDF5')
-                      : tk.blueBg,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 18, flexShrink: 0,
+                    width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                    background: displayEntry.completedSteps.length > 0 ? 'rgba(5,150,105,0.15)' : 'rgba(135,160,192,0.12)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20,
                   }}>
                     {displayEntry.completedSteps.length > 0 ? '✓' : '○'}
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: tk.heading }}>
+                    <div className="font-label" style={{ fontSize: 14, fontWeight: 700, color: 'var(--on-surface)', marginBottom: 4 }}>
                       {displayEntry.completedSteps.length} procedure step{displayEntry.completedSteps.length !== 1 ? 's' : ''} completed
                     </div>
-                    <div style={{ fontSize: 12, color: tk.muted, marginTop: 2 }}>
+                    <div className="font-body" style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
                       Steps {displayEntry.completedSteps.map(s => s + 1).join(', ')} were marked complete during this session.
                     </div>
                   </div>
@@ -461,8 +410,18 @@ export default function LabJournal() {
         )}
       </div>
 
-      {/* Spin keyframe for loading state */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (min-width: 640px) {
+          .arise-journal-layout { flex-direction: row !important; }
+          .arise-journal-sidebar {
+            width: 300px !important;
+            max-height: none !important;
+            border-bottom: none !important;
+            border-right: 1px solid rgba(66,73,79,0.2) !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

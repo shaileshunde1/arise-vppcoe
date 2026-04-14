@@ -1,55 +1,61 @@
 import { motion } from 'framer-motion';
-import { useTheme } from '../contexts/ThemeContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { experiments } from '../data/experiments';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { useTheme } from '../contexts/ThemeContext';
 
+// ─── Animation variants ───────────────────────────────────────
 const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  show: (i = 0) => ({ opacity: 1, y: 0, transition: { duration: 0.5, delay: i * 0.1 } }),
+  hidden: { opacity: 0, y: 24 },
+  show: (i = 0) => ({
+    opacity: 1, y: 0,
+    transition: { duration: 0.6, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] },
+  }),
 };
 
+// ─── Static data ──────────────────────────────────────────────
 const STATS = [
-  { value: '10', label: 'Virtual Experiments' },
-  { value: '2', label: 'Subjects' },
+  { value: '10',    label: 'Virtual Experiments' },
+  { value: '2',     label: 'Subjects' },
   { value: 'NCERT', label: 'Aligned Curriculum' },
-  { value: 'AI', label: 'Powered Recommendations' },
+  { value: 'AI',    label: 'Powered Recommendations' },
 ];
 
 const STEPS = [
   {
     num: '01', title: 'Take the Diagnostic Quiz',
     desc: 'A proctored adaptive test that maps your proficiency across NCERT concepts in Physics and Chemistry.',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
   },
   {
     num: '02', title: 'Receive Lab Recommendations',
     desc: 'Our ML engine analyses your results and recommends the most relevant experiments to strengthen weak areas.',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>,
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>,
   },
   {
     num: '03', title: 'Perform Virtual Labs',
     desc: 'Run interactive simulations with real apparatus controls, record observations, and get live data plotted automatically.',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>,
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>,
   },
   {
     num: '04', title: 'Store Results & Get Scored',
     desc: 'All observations are saved to your Lab Journal. AI evaluates accuracy, procedure, and time for a final score.',
-    icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
   },
 ];
 
 const FEATURED = experiments.slice(0, 3);
 const MEDALS = ['🥇', '🥈', '🥉'];
 
+// ─── Icons ────────────────────────────────────────────────────
 const MoonIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
   </svg>
 );
 const SunIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <circle cx="12" cy="12" r="5"/>
     <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
     <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -58,35 +64,53 @@ const SunIcon = () => (
   </svg>
 );
 
+// ─── Types ────────────────────────────────────────────────────
 interface LeaderRow { name: string; institution: string; score: number; }
 
+// ─── Theme-aware text helpers ─────────────────────────────────
+// These resolve the light-mode washed-out problem by giving explicit
+// high-contrast values instead of relying on rgba(255,255,255,x) which
+// is invisible on the #F0EEE9 light background.
+function bodyText(dark: boolean) {
+  return dark ? 'rgba(255,255,255,0.60)' : '#374151';   // gray-700 in light
+}
+function mutedText(dark: boolean) {
+  return dark ? 'rgba(255,255,255,0.42)' : '#6B7280';   // gray-500 in light
+}
+function labelText(dark: boolean) {
+  return dark ? 'rgba(255,255,255,0.32)' : '#9CA3AF';   // gray-400 in light
+}
+function cardBorder(dark: boolean) {
+  return dark ? 'rgba(66,73,79,0.3)' : 'rgba(0,0,0,0.15)';
+}
+function sectionBorder(dark: boolean) {
+  return dark ? 'rgba(66,73,79,0.2)' : 'rgba(0,0,0,0.12)';
+}
+
+// ─── Component ────────────────────────────────────────────────
 export default function LandingPage() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const dark = theme === 'dark';
 
-  const [leaders, setLeaders] = useState<LeaderRow[]>([]);
+  const [leaders, setLeaders]               = useState<LeaderRow[]>([]);
   const [leadersLoading, setLeadersLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const loadLeaders = async () => {
       try {
         const { data: profiles } = await supabase
           .from('profiles').select('id, name, institution').eq('role', 'student');
-
         if (!profiles || profiles.length === 0) { setLeadersLoading(false); return; }
-
         const { data: journals } = await supabase
           .from('journal_entries').select('user_id, score');
-
         const scoreMap: Record<string, number> = {};
         journals?.forEach(j => { scoreMap[j.user_id] = (scoreMap[j.user_id] || 0) + j.score; });
-
         const board: LeaderRow[] = profiles
           .map(p => ({ name: p.name || 'Student', institution: p.institution || '—', score: scoreMap[p.id] || 0 }))
           .sort((a, b) => b.score - a.score)
           .slice(0, 5);
-
         setLeaders(board);
       } catch (err) {
         console.error('Failed to load leaderboard:', err);
@@ -97,192 +121,319 @@ export default function LandingPage() {
     loadLeaders();
   }, []);
 
-  const tk = {
-    pageBg:      dark ? '#0F111A' : '#F0EEE9',
-    navBg:       dark ? '#161929' : '#FAFAF8',
-    navBorder:   dark ? '#2E3040' : '#E2DED7',
-    cardBg:      dark ? '#1C1F2E' : '#FFFFFF',
-    cardBorder:  dark ? '#232840' : '#E8E5DF',
-    sectionAlt:  dark ? '#161929' : '#E8E6E1',
-    headingText: dark ? '#EDEDF0' : '#111111',
-    bodyText:    dark ? '#8890A4' : '#666666',
-    mutedText:   dark ? '#525870' : '#AAAAAA',
-    accentBg:    dark ? 'rgba(29,78,216,0.14)' : '#EEF2FF',
-    accentText:  dark ? '#93B4FF' : '#1D4ED8',
-    accentBorder:dark ? 'rgba(29,78,216,0.3)' : '#C7D7FD',
-    physBg:      dark ? 'rgba(29,78,216,0.18)' : '#EEF2FF',
-    physText:    dark ? '#93B4FF' : '#1D4ED8',
-    chemBg:      dark ? 'rgba(5,150,105,0.18)' : '#ECFDF5',
-    chemText:    dark ? '#6EE7B7' : '#065F46',
-    shadow:      dark ? 'none' : '0 1px 4px rgba(0,0,0,0.05)',
-    shadowHover: dark ? 'none' : '0 6px 20px rgba(0,0,0,0.08)',
-  };
+  // Close mobile menu on resize
+  useEffect(() => {
+    const handleResize = () => { if (window.innerWidth >= 768) setMobileMenuOpen(false); };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
-    <div style={{ background: tk.pageBg, color: tk.headingText, minHeight: '100vh', transition: 'background 0.3s, color 0.3s' }}>
+    <div className="min-h-screen" style={{ background: 'var(--surface)', color: 'var(--on-background)' }}>
 
-      {/* NAV */}
-      <nav style={{ background: tk.navBg, borderBottom: `1px solid ${tk.navBorder}`, position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50 }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto', padding: '0 24px', height: 58, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 26, height: 26, background: tk.headingText, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={tk.pageBg} strokeWidth="2.5"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18"/></svg>
-            </div>
-            <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.4px', color: tk.headingText }}>ARISE</span>
+      {/* ── NAV ─────────────────────────────────────────────── */}
+      <nav className="frosted-nav fixed top-0 left-0 right-0 z-50">
+        <div className="max-w-screen-xl mx-auto px-5 md:px-10 h-16 flex items-center justify-between">
+          <span className="serif text-xl font-light tracking-tight" style={{ color: 'var(--primary)' }}>
+            Arise
+          </span>
+
+          {/* Desktop nav links */}
+          <div className="hidden md:flex gap-8 items-center">
+            {[['How It Works', '#how-it-works'], ['Experiments', '#experiments']].map(([label, href]) => (
+              <a key={label} href={href}
+                className="text-[11px] font-label font-medium tracking-[0.15em] uppercase transition-colors duration-200"
+                style={{ color: mutedText(dark) }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--primary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = mutedText(dark))}>
+                {label}
+              </a>
+            ))}
+            <Link to="/leaderboard"
+              className="text-[11px] font-label font-medium tracking-[0.15em] uppercase transition-colors duration-200"
+              style={{ color: mutedText(dark) }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--primary)')}
+              onMouseLeave={e => (e.currentTarget.style.color = mutedText(dark))}>
+              Leaderboard
+            </Link>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-            <div style={{ display: 'flex', gap: 24, fontSize: 13, fontWeight: 500 }}>
-              {[['How It Works','#how-it-works'],['Experiments','#experiments']].map(([label, href]) => (
-                <a key={label} href={href} style={{ color: tk.bodyText, textDecoration: 'none' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = tk.headingText)}
-                  onMouseLeave={e => (e.currentTarget.style.color = tk.bodyText)}>{label}</a>
-              ))}
-              <Link to="/leaderboard" style={{ color: tk.bodyText, textDecoration: 'none' }}
-                onMouseEnter={e => (e.currentTarget.style.color = tk.headingText)}
-                onMouseLeave={e => (e.currentTarget.style.color = tk.bodyText)}>Leaderboard</Link>
-            </div>
-            <button onClick={toggleTheme} style={{ width: 32, height: 32, borderRadius: 8, background: tk.sectionAlt, border: `1px solid ${tk.navBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: tk.bodyText, transition: 'all 0.2s', flexShrink: 0 }}>
+
+          <div className="flex items-center gap-3">
+            <button onClick={toggleTheme}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200"
+              style={{ background: 'var(--surface-container-high)', color: 'var(--on-surface-variant)', border: `1px solid ${cardBorder(dark)}` }}
+              aria-label="Toggle theme">
               {dark ? <SunIcon /> : <MoonIcon />}
             </button>
-            <Link to="/auth" style={{ fontSize: 13, fontWeight: 700, background: tk.headingText, color: tk.pageBg, padding: '8px 16px', borderRadius: 8, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            <Link to="/auth"
+              className="metallic text-[11px] font-label font-bold tracking-widest uppercase px-4 py-2.5 rounded-md transition-all duration-200 hover:scale-[0.97]"
+              style={{ color: 'var(--on-primary)' }}>
               Get Started
             </Link>
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden w-8 h-8 rounded-lg flex flex-col items-center justify-center gap-1.5 transition-colors duration-200"
+              style={{ background: 'var(--surface-container-high)', border: `1px solid ${cardBorder(dark)}` }}
+              onClick={() => setMobileMenuOpen(v => !v)}
+              aria-label="Toggle menu">
+              <span className="block w-4 h-px transition-all duration-200" style={{ background: 'var(--on-surface-variant)', transform: mobileMenuOpen ? 'rotate(45deg) translateY(4px)' : 'none' }} />
+              <span className="block w-4 h-px transition-all duration-200" style={{ background: 'var(--on-surface-variant)', opacity: mobileMenuOpen ? 0 : 1 }} />
+              <span className="block w-4 h-px transition-all duration-200" style={{ background: 'var(--on-surface-variant)', transform: mobileMenuOpen ? 'rotate(-45deg) translateY(-4px)' : 'none' }} />
+            </button>
           </div>
         </div>
-      </nav>
 
-      {/* HERO */}
-      <section style={{ paddingTop: 96, paddingBottom: 72 }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto', padding: '40px 24px 0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 56, alignItems: 'center' }}>
-          <motion.div variants={fadeUp} initial="hidden" animate="show">
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: tk.accentBg, border: `1px solid ${tk.accentBorder}`, color: tk.accentText, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: 999, marginBottom: 22 }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: tk.accentText, display: 'inline-block' }}></span>
-              NCERT Aligned Virtual Science Lab
-            </div>
-            <h1 style={{ fontSize: 50, fontWeight: 800, lineHeight: 1.08, letterSpacing: '-1.5px', color: tk.headingText, marginBottom: 18 }}>
-              Your Virtual<br /><span style={{ color: '#1D4ED8' }}>Science Lab</span><br />is Open 24/7.
-            </h1>
-            <p style={{ fontSize: 15, color: tk.bodyText, lineHeight: 1.75, marginBottom: 30, maxWidth: 420 }}>
-              Perform precision physics and chemistry experiments in your browser. AI-driven recommendations, real-time scoring, and a complete lab journal — built for Indian science students.
-            </p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button onClick={() => navigate('/auth')} style={{ padding: '11px 22px', background: '#1D4ED8', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 9, border: 'none', cursor: 'pointer' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1E40AF')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#1D4ED8')}>
-                Start Experimenting Free
-              </button>
-              <button onClick={() => navigate('/quiz')} style={{ padding: '11px 22px', background: 'transparent', color: tk.headingText, fontWeight: 700, fontSize: 13, borderRadius: 9, border: `1.5px solid ${tk.cardBorder}`, cursor: 'pointer' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = '#1D4ED8')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = tk.cardBorder)}>
-                Take Diagnostic Quiz
-              </button>
-            </div>
-          </motion.div>
-
-          <motion.div variants={fadeUp} custom={2} initial="hidden" animate="show">
-            <div style={{ background: tk.sectionAlt, border: `1px solid ${tk.cardBorder}`, borderRadius: 20, padding: 20, position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', inset: 0, opacity: 0.35, backgroundImage: `radial-gradient(circle, ${tk.mutedText} 1px, transparent 1px)`, backgroundSize: '18px 18px' }}></div>
-              <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 13, padding: 14, boxShadow: tk.shadow }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: tk.mutedText, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Simple Pendulum — L vs T²</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#059669', background: dark ? 'rgba(5,150,105,0.15)' : '#ECFDF5', padding: '2px 8px', borderRadius: 999 }}>● Live</span>
-                  </div>
-                  <svg width="100%" height="52" viewBox="0 0 280 52">
-                    <polyline points="0,46 40,30 80,34 120,14 160,20 200,8 240,12 280,4" fill="none" stroke="#1D4ED8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    {[40,80,120,160,200,240].map((x, i) => <circle key={i} cx={x} cy={[30,34,14,20,8,12][i]} r="2.5" fill="#1D4ED8"/>)}
-                  </svg>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 13, padding: 13 }}>
-                    <div style={{ fontSize: 9, color: tk.mutedText, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Procedure</div>
-                    {['Set string length','Release bob','Record time'].map((step, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 11 }}>
-                        <div style={{ width: 15, height: 15, borderRadius: '50%', background: i < 2 ? '#1D4ED8' : tk.sectionAlt, color: i < 2 ? '#fff' : tk.mutedText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{i + 1}</div>
-                        <span style={{ color: i < 2 ? tk.mutedText : tk.headingText, textDecoration: i < 2 ? 'line-through' : 'none' }}>{step}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 13, padding: 13 }}>
-                    <div style={{ fontSize: 9, color: tk.mutedText, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Live Score</div>
-                    <div style={{ fontSize: 26, fontWeight: 800, color: tk.headingText, lineHeight: 1 }}>74</div>
-                    <div style={{ fontSize: 10, color: tk.mutedText, marginTop: 2 }}>/ 100 pts</div>
-                    <div style={{ marginTop: 8, width: '100%', height: 4, background: tk.sectionAlt, borderRadius: 999, overflow: 'hidden' }}>
-                      <div style={{ width: '74%', height: '100%', background: '#1D4ED8', borderRadius: 999 }}></div>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ background: tk.accentBg, border: `1px solid ${tk.accentBorder}`, borderRadius: 11, padding: 11 }}>
-                  <div style={{ fontSize: 9, fontWeight: 800, color: tk.accentText, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>✦ AI Insight</div>
-                  <p style={{ fontSize: 11, color: tk.accentText, lineHeight: 1.5, opacity: 0.85 }}>Your L vs T² data confirms a linear relationship. Calculated g = 9.76 m/s² — within 0.2% of actual value.</p>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* STATS */}
-      <section style={{ background: tk.sectionAlt, borderTop: `1px solid ${tk.navBorder}`, borderBottom: `1px solid ${tk.navBorder}`, margin: '40px 0 0' }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto', padding: '18px 24px', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
-          {STATS.map((s, i) => (
-            <motion.div key={i} variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: tk.headingText }}>{s.value}</div>
-              <div style={{ fontSize: 12, color: tk.bodyText, marginTop: 2 }}>{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* HOW IT WORKS */}
-      <section id="how-it-works" style={{ padding: '72px 24px', maxWidth: 1160, margin: '0 auto' }}>
-        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} style={{ marginBottom: 44 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#1D4ED8', marginBottom: 10 }}>The Flow</div>
-          <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.7px', color: tk.headingText, marginBottom: 8 }}>How ARISE Works</h2>
-          <p style={{ fontSize: 14, color: tk.bodyText, maxWidth: 440 }}>From login to scored lab report — the complete student journey.</p>
-        </motion.div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
-          {STEPS.map((step, i) => (
-            <motion.div key={i} variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }}
-              style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 16, padding: 22, boxShadow: tk.shadow }}
-              whileHover={{ y: -2 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 11, background: tk.accentBg, color: tk.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>{step.icon}</div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: tk.mutedText, fontFamily: 'monospace', marginBottom: 7 }}>{step.num}</div>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: tk.headingText, marginBottom: 7, lineHeight: 1.35 }}>{step.title}</h3>
-              <p style={{ fontSize: 13, color: tk.bodyText, lineHeight: 1.65 }}>{step.desc}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* FEATURED EXPERIMENTS */}
-      <section id="experiments" style={{ padding: '72px 24px', background: tk.sectionAlt, borderTop: `1px solid ${tk.navBorder}`, borderBottom: `1px solid ${tk.navBorder}` }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 44 }}>
-            <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#1D4ED8', marginBottom: 10 }}>Lab Catalog</div>
-              <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.7px', color: tk.headingText, marginBottom: 6 }}>Featured Experiments</h2>
-              <p style={{ fontSize: 14, color: tk.bodyText }}>Fully interactive simulations — no installation required.</p>
-            </motion.div>
-            <Link to="/labs" style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-              View All 10 Labs <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden px-5 pb-4 flex flex-col gap-1"
+            style={{ background: 'var(--surface-container)', borderTop: `1px solid ${sectionBorder(dark)}` }}>
+            {[['How It Works', '#how-it-works'], ['Experiments', '#experiments']].map(([label, href]) => (
+              <a key={label} href={href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-3 text-[11px] font-label font-medium tracking-[0.15em] uppercase"
+                style={{ color: bodyText(dark), borderBottom: `1px solid ${sectionBorder(dark)}` }}>
+                {label}
+              </a>
+            ))}
+            <Link to="/leaderboard"
+              onClick={() => setMobileMenuOpen(false)}
+              className="py-3 text-[11px] font-label font-medium tracking-[0.15em] uppercase"
+              style={{ color: bodyText(dark) }}>
+              Leaderboard
             </Link>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 18 }}>
+        )}
+      </nav>
+
+      {/* ── HERO ─────────────────────────────────────────────── */}
+      <section className="relative min-h-[90vh] flex flex-col items-center justify-center overflow-hidden pt-16 text-center px-5">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] md:w-[700px] h-[400px] md:h-[700px] rounded-full blur-[180px]"
+            style={{ background: 'var(--secondary)', opacity: dark ? 0.06 : 0.09 }} />
+        </div>
+        <div className="relative z-10 max-w-4xl mx-auto py-20 space-y-6">
+          <motion.div variants={fadeUp} initial="hidden" animate="show"
+            className="flex items-center justify-center gap-3">
+            <div className="pulse-dot" />
+            <span className="font-label text-xs tracking-[0.2em] uppercase" style={{ color: 'var(--secondary)' }}>
+              NCERT Aligned Virtual Science Lab
+            </span>
+          </motion.div>
+
+          <motion.h1 variants={fadeUp} custom={1} initial="hidden" animate="show"
+            className="serif font-light tracking-tighter"
+            style={{
+              fontSize: 'clamp(4.5rem, 14vw, 10rem)',
+              color: 'var(--primary)',
+              lineHeight: 0.92,
+              letterSpacing: '-0.04em',
+            }}>
+            ARISE
+          </motion.h1>
+
+          <motion.p variants={fadeUp} custom={2} initial="hidden" animate="show"
+            className="serif font-light tracking-wide"
+            style={{
+              fontSize: 'clamp(0.875rem, 2vw, 1.25rem)',
+              color: dark ? 'rgba(255,255,255,0.72)' : '#374151',
+              letterSpacing: '0.06em',
+            }}>
+            Advanced Remote Interactive Science Environment.
+          </motion.p>
+
+          <motion.div variants={fadeUp} custom={2.5} initial="hidden" animate="show"
+            className="w-12 h-px mx-auto" style={{ background: 'var(--secondary)', opacity: 0.4 }} />
+
+          <motion.p variants={fadeUp} custom={3} initial="hidden" animate="show"
+            className="font-body font-light leading-relaxed max-w-xl mx-auto"
+            style={{ fontSize: '1rem', color: bodyText(dark) }}>
+            A sophisticated ecosystem for global researchers and students to interface
+            with physical laboratories from anywhere in the world.
+          </motion.p>
+
+          <motion.div variants={fadeUp} custom={4} initial="hidden" animate="show"
+            className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
+            <button onClick={() => navigate('/auth')}
+              className="metallic font-label font-bold tracking-tight px-8 py-3.5 rounded-md transition-all hover:scale-[0.98]"
+              style={{ color: 'var(--on-primary)', fontSize: '0.875rem' }}>
+              Start Experimenting Free
+            </button>
+            <button onClick={() => navigate('/quiz')}
+              className="font-label font-bold tracking-tight px-8 py-3.5 rounded-md transition-all ghost-border hover:bg-[var(--surface-bright)]"
+              style={{ color: 'var(--primary)', fontSize: '0.875rem', background: 'var(--surface-container-highest)' }}>
+              Take Diagnostic Quiz
+            </button>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ── STATS ────────────────────────────────────────────── */}
+      <section style={{ background: 'var(--surface-container-low)', borderTop: `1px solid ${sectionBorder(dark)}`, borderBottom: `1px solid ${sectionBorder(dark)}` }}>
+        <div className="max-w-screen-xl mx-auto px-5 md:px-10 py-5 grid grid-cols-2 md:grid-cols-4 gap-6">
+          {STATS.map((s, i) => (
+            <motion.div key={i} variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }}
+              className="text-center py-1">
+              <div className="serif text-2xl font-light" style={{ color: 'var(--primary)' }}>{s.value}</div>
+              <div className="font-label text-xs tracking-[0.1em] uppercase mt-1" style={{ color: mutedText(dark) }}>{s.label}</div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── SCIENTIFIC DISCIPLINES ───────────────────────────── */}
+      <section className="py-20 md:py-28 max-w-screen-xl mx-auto px-5 md:px-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 md:mb-16 gap-4 md:gap-8">
+          <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}>
+            <h2 className="serif font-light tracking-tighter mb-4"
+              style={{ fontSize: 'clamp(2rem, 4vw, 3.75rem)', color: 'var(--primary)' }}>
+              Scientific Disciplines
+            </h2>
+            <p className="font-body text-sm" style={{ color: bodyText(dark) }}>
+              Direct telemetry and real-time control across our specialized facilities.
+            </p>
+          </motion.div>
+          <span className="font-label text-xs tracking-[0.2em] uppercase hidden md:block"
+            style={{ color: 'var(--secondary)' }}>Scroll to Discover</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            {
+              title: 'Physics',
+              desc: 'Quantum mechanics, optics, and particle interaction chambers equipped with sub-nanosecond sensors.',
+              icon: 'blur_on',
+              available: true,
+              image: 'https://images.unsplash.com/photo-1636466497217-26a8cbeaf0aa?w=800&q=80',
+              href: '/labs?subject=physics',
+            },
+            {
+              title: 'Chemistry',
+              desc: 'Automated titration systems and spectroscopic analysis in a controlled atmosphere environment.',
+              icon: 'science',
+              available: true,
+              image: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?w=800&q=80',
+              href: '/labs?subject=chemistry',
+            },
+            {
+              title: 'Mechanics',
+              desc: 'Structural stress testing and fluid dynamic simulations with remote-actuated robotics.',
+              icon: 'precision_manufacturing',
+              available: false,
+              image: 'https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?w=800&q=80',
+              href: '#',
+            },
+            {
+              title: 'BEE',
+              desc: 'Basic Electrical Engineering pathways featuring programmable logic and high-fidelity signal monitoring.',
+              icon: 'electric_bolt',
+              available: false,
+              image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&q=80',
+              href: '#',
+            },
+          ].map((disc, i) => (
+            <motion.div key={disc.title}
+              variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }}
+              whileHover={{ y: -4 }}
+              className="relative rounded-xl overflow-hidden group transition-all duration-500 cursor-pointer"
+              style={{ minHeight: 280, background: 'var(--surface-container)' }}
+              onClick={() => disc.available && navigate(disc.href)}>
+              {disc.image && (
+                <div className="absolute inset-0 transition-all duration-700">
+                  <img src={disc.image} alt={disc.title}
+                    className="w-full h-full object-cover grayscale transition-all duration-700 group-hover:grayscale-0 group-hover:scale-105"
+                    style={{ opacity: dark ? 0.18 : 0.38 }} />
+                  <div className="absolute inset-0"
+                    style={{ background: dark
+                      ? 'linear-gradient(180deg, rgba(12,14,16,0.4) 0%, rgba(12,14,16,0.85) 100%)'
+                      : 'linear-gradient(180deg, rgba(240,238,233,0.45) 0%, rgba(240,238,233,0.96) 100%)' }} />
+                </div>
+              )}
+              {!disc.available && (
+                <div className="absolute top-4 right-4 z-10">
+                  <span className="font-label text-[9px] font-bold tracking-[0.15em] uppercase px-2.5 py-1 rounded-full"
+                    style={{ background: 'var(--surface-container-highest)', color: mutedText(dark) }}>
+                    Coming Soon
+                  </span>
+                </div>
+              )}
+              <div className="relative z-10 p-6 md:p-8 h-full flex flex-col justify-between" style={{ minHeight: 280 }}>
+                <div className="w-10 h-10 flex items-center justify-center mb-6"
+                  style={{ color: disc.available ? 'var(--secondary)' : labelText(dark) }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+                    {disc.icon === 'blur_on'                && <><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6" strokeOpacity="0.4"/><circle cx="12" cy="12" r="9" strokeOpacity="0.2"/></>}
+                    {disc.icon === 'science'                && <><path d="M9 3v8l-4 7h14l-4-7V3"/><line x1="6" y1="6" x2="18" y2="6"/></>}
+                    {disc.icon === 'precision_manufacturing' && <><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3l-4 4-4-4"/><circle cx="12" cy="14" r="2"/></>}
+                    {disc.icon === 'electric_bolt'          && <><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></>}
+                  </svg>
+                </div>
+                <div className="space-y-3">
+                  <h3 className="serif font-light text-2xl" style={{ color: 'var(--primary)' }}>{disc.title}</h3>
+                  <p className="font-body text-sm leading-relaxed"
+                    style={{ color: disc.available ? bodyText(dark) : mutedText(dark) }}>
+                    {disc.desc}
+                  </p>
+                  <div className="h-px w-0 transition-all duration-700 group-hover:w-full mt-4"
+                    style={{ background: disc.available ? 'var(--secondary)' : labelText(dark), opacity: 0.5 }} />
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FEATURED EXPERIMENTS ─────────────────────────────── */}
+      <section id="experiments" className="py-20 md:py-28"
+        style={{ background: 'var(--surface-container-low)', borderTop: `1px solid ${sectionBorder(dark)}`, borderBottom: `1px solid ${sectionBorder(dark)}` }}>
+        <div className="max-w-screen-xl mx-auto px-5 md:px-10">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-12 md:mb-16 gap-4 md:gap-8">
+            <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}>
+              <span className="font-label text-xs font-bold tracking-[0.2em] uppercase block mb-4"
+                style={{ color: 'var(--secondary)' }}>Lab Catalog</span>
+              <h2 className="serif font-light tracking-tighter mb-3"
+                style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', color: 'var(--primary)' }}>
+                Featured Experiments
+              </h2>
+              <p className="font-body text-sm" style={{ color: bodyText(dark) }}>
+                Fully interactive simulations — no installation required.
+              </p>
+            </motion.div>
+            <Link to="/labs" className="tertiary-link flex items-center gap-2 font-label text-xs font-bold tracking-[0.15em] uppercase shrink-0">
+              View All 10 Labs
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {FEATURED.map((lab, i) => (
               <motion.div key={lab.id} variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }}
-                style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 16, overflow: 'hidden', boxShadow: tk.shadow }}
-                whileHover={{ y: -3 }}>
-                <div style={{ height: 3, background: lab.subject === 'physics' ? '#1D4ED8' : '#059669' }}></div>
-                <div style={{ padding: '18px 20px 20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 9px', borderRadius: 999, background: lab.subject === 'physics' ? tk.physBg : tk.chemBg, color: lab.subject === 'physics' ? tk.physText : tk.chemText }}>{lab.subject}</span>
-                    <span style={{ fontSize: 11, color: tk.mutedText }}>{lab.ncert}</span>
+                whileHover={{ y: -4 }}
+                className="rounded-xl overflow-hidden group transition-colors duration-500"
+                style={{ background: 'var(--surface-container)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-container-high)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-container)')}>
+                <div className="h-0.5 w-full"
+                  style={{ background: lab.subject === 'physics' ? 'var(--secondary)' : 'var(--primary-container)' }} />
+                <div className="p-6 md:p-8 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-label text-[10px] font-bold tracking-[0.15em] uppercase px-3 py-1 rounded-full"
+                      style={{
+                        background: lab.subject === 'physics' ? 'rgba(135,160,192,0.12)' : 'rgba(197,198,201,0.1)',
+                        color: lab.subject === 'physics' ? 'var(--secondary)' : 'var(--primary)',
+                      }}>
+                      {lab.subject}
+                    </span>
+                    <span className="font-label text-[10px]" style={{ color: mutedText(dark) }}>
+                      {lab.ncert}
+                    </span>
                   </div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, color: tk.headingText, marginBottom: 7 }}>{lab.title}</h3>
-                  <p style={{ fontSize: 13, color: tk.bodyText, lineHeight: 1.65, marginBottom: 18 }}>{lab.aim}</p>
-                  <Link to={`/labs/${lab.id}`} style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    Open Lab <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  <h3 className="serif font-light text-xl leading-snug" style={{ color: 'var(--primary)' }}>
+                    {lab.title}
+                  </h3>
+                  <p className="font-body text-sm leading-relaxed" style={{ color: bodyText(dark) }}>
+                    {lab.aim}
+                  </p>
+                  <Link to={`/labs/${lab.id}`}
+                    className="tertiary-link inline-flex items-center gap-2 font-label text-xs font-bold tracking-[0.1em] uppercase mt-2">
+                    Open Lab
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                   </Link>
                 </div>
               </motion.div>
@@ -291,68 +442,112 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── LEADERBOARD — real Supabase data ─────────────────── */}
-      <section style={{ padding: '72px 24px', maxWidth: 1160, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
-          <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#1D4ED8', marginBottom: 10 }}>Competition</div>
-            <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.7px', color: tk.headingText, marginBottom: 10 }}>Top Scholars</h2>
-            <p style={{ fontSize: 14, color: tk.bodyText, lineHeight: 1.75, marginBottom: 22 }}>
-              Earn points by completing experiments accurately and efficiently. Compete with students across institutions.
+      {/* ── HOW IT WORKS ─────────────────────────────────────── */}
+      <section id="how-it-works" className="py-20 md:py-28 max-w-screen-xl mx-auto px-5 md:px-10">
+        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} className="mb-12 md:mb-16">
+          <span className="font-label text-xs font-bold tracking-[0.2em] uppercase block mb-4"
+            style={{ color: 'var(--secondary)' }}>The Flow</span>
+          <h2 className="serif font-light tracking-tighter mb-4"
+            style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', color: 'var(--primary)' }}>
+            How ARISE Works
+          </h2>
+          <p className="font-body max-w-md" style={{ color: bodyText(dark), fontSize: '0.9375rem' }}>
+            From login to scored lab report — the complete student journey.
+          </p>
+        </motion.div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {STEPS.map((step, i) => (
+            <motion.div key={i} variants={fadeUp} custom={i} initial="hidden" whileInView="show" viewport={{ once: true }}
+              whileHover={{ y: -4 }}
+              className="p-6 md:p-8 rounded-xl transition-colors duration-500 group"
+              style={{ background: 'var(--surface-container)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-container-high)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-container)')}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-8"
+                style={{ background: 'var(--surface-container-high)', color: 'var(--secondary)' }}>
+                {step.icon}
+              </div>
+              <div className="font-label text-[10px] font-bold tracking-[0.2em] mb-4"
+                style={{ color: labelText(dark) }}>
+                {step.num}
+              </div>
+              <h3 className="serif font-light text-lg mb-3 leading-snug" style={{ color: 'var(--primary)' }}>
+                {step.title}
+              </h3>
+              <p className="font-body text-sm leading-relaxed" style={{ color: bodyText(dark) }}>
+                {step.desc}
+              </p>
+              <div className="h-px w-0 mt-6 transition-all duration-700 group-hover:w-full"
+                style={{ background: 'var(--secondary)', opacity: 0.4 }} />
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── LEADERBOARD ──────────────────────────────────────── */}
+      <section className="py-20 md:py-28 max-w-screen-xl mx-auto px-5 md:px-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 items-center">
+          <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} className="space-y-6">
+            <span className="font-label text-xs font-bold tracking-[0.2em] uppercase block"
+              style={{ color: 'var(--secondary)' }}>Competition</span>
+            <h2 className="serif font-light tracking-tighter"
+              style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', color: 'var(--primary)' }}>
+              Top Scholars
+            </h2>
+            <p className="font-body leading-relaxed max-w-sm"
+              style={{ color: bodyText(dark), fontSize: '0.9375rem' }}>
+              Earn points by completing experiments accurately and efficiently.
+              Compete with students across institutions.
             </p>
-            <Link to="/leaderboard" style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              View Full Leaderboard <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            <Link to="/leaderboard"
+              className="tertiary-link inline-flex items-center gap-2 font-label text-xs font-bold tracking-[0.15em] uppercase">
+              View Full Leaderboard
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
             </Link>
           </motion.div>
-
           <motion.div variants={fadeUp} custom={2} initial="hidden" whileInView="show" viewport={{ once: true }}>
-            <div style={{ background: tk.cardBg, border: `1px solid ${tk.cardBorder}`, borderRadius: 16, overflow: 'hidden', boxShadow: tk.shadow }}>
-              {/* Header */}
-              <div style={{ padding: '13px 18px', borderBottom: `1px solid ${tk.navBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: tk.headingText }}>All Time Rankings</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#059669', fontWeight: 600 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#059669', display: 'inline-block' }}></span>
+            <div className="rounded-xl overflow-hidden" style={{ background: 'var(--surface-container)' }}>
+              <div className="flex items-center justify-between px-6 py-4"
+                style={{ borderBottom: `1px solid ${sectionBorder(dark)}` }}>
+                <span className="font-label text-xs font-bold tracking-[0.1em] uppercase"
+                  style={{ color: mutedText(dark) }}>All Time Rankings</span>
+                <span className="flex items-center gap-2 font-label text-[10px] font-bold"
+                  style={{ color: 'var(--secondary)' }}>
+                  <span className="pulse-dot" style={{ width: 5, height: 5 }} />
                   Live
                 </span>
               </div>
-
-              {/* Loading */}
               {leadersLoading && (
-                <div style={{ padding: '32px', textAlign: 'center', color: tk.mutedText, fontSize: 13 }}>
+                <div className="py-10 text-center font-label text-xs" style={{ color: mutedText(dark) }}>
                   Loading rankings...
                 </div>
               )}
-
-              {/* Empty state */}
               {!leadersLoading && leaders.length === 0 && (
-                <div style={{ padding: '32px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, marginBottom: 8 }}>🏆</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: tk.headingText, marginBottom: 4 }}>No scores yet</div>
-                  <div style={{ fontSize: 12, color: tk.mutedText }}>Be the first to complete a lab and claim the top spot.</div>
+                <div className="py-10 text-center space-y-2">
+                  <div className="text-2xl">🏆</div>
+                  <div className="font-label text-xs font-bold" style={{ color: 'var(--primary)' }}>No scores yet</div>
+                  <div className="font-body text-xs" style={{ color: bodyText(dark) }}>
+                    Be the first to complete a lab and claim the top spot.
+                  </div>
                 </div>
               )}
-
-              {/* Real rows */}
               {!leadersLoading && leaders.map((s, i) => (
-                <div key={i} style={{
-                  padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 12,
-                  borderBottom: i < leaders.length - 1 ? `1px solid ${tk.navBorder}` : 'none',
-                  transition: 'background 0.15s', cursor: 'default',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = tk.sectionAlt)}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <div style={{ width: 24, textAlign: 'center' }}>
+                <div key={i}
+                  className="flex items-center gap-4 px-6 py-3.5 transition-colors duration-150 cursor-default"
+                  style={{ borderBottom: i < leaders.length - 1 ? `1px solid ${sectionBorder(dark)}` : 'none' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-container-high)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <div className="w-6 text-center shrink-0">
                     {i < 3
-                      ? <span style={{ fontSize: 14 }}>{MEDALS[i]}</span>
-                      : <span style={{ fontSize: 12, fontWeight: 700, color: tk.mutedText }}>#{i + 1}</span>
+                      ? <span className="text-sm">{MEDALS[i]}</span>
+                      : <span className="font-label text-xs font-bold" style={{ color: mutedText(dark) }}>#{i + 1}</span>
                     }
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: tk.headingText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
-                    <div style={{ fontSize: 11, color: tk.mutedText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.institution}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-label text-sm font-bold truncate" style={{ color: 'var(--primary)' }}>{s.name}</div>
+                    <div className="font-label text-[11px] truncate" style={{ color: mutedText(dark) }}>{s.institution}</div>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8', fontFamily: 'monospace', flexShrink: 0 }}>
+                  <div className="font-label text-sm font-bold shrink-0" style={{ color: 'var(--secondary)', fontVariantNumeric: 'tabular-nums' }}>
                     {s.score > 0 ? s.score.toLocaleString() : '—'}
                   </div>
                 </div>
@@ -362,36 +557,63 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FINAL CTA */}
-      <section style={{ background: '#1E2028', padding: '72px 24px' }}>
-        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }} style={{ maxWidth: 580, margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{ fontSize: 38, fontWeight: 800, color: '#EDEDF0', letterSpacing: '-1px', lineHeight: 1.15, marginBottom: 12 }}>
-            Ready to start your first experiment?
-          </h2>
-          <p style={{ fontSize: 15, color: '#8890A4', lineHeight: 1.75, marginBottom: 32 }}>
-            Join students using ARISE to master science concepts through hands-on virtual experiments.
-          </p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link to="/auth" style={{ padding: '12px 26px', background: '#FFFFFF', color: '#111', fontWeight: 700, fontSize: 13, borderRadius: 9, textDecoration: 'none' }}>Create Free Account</Link>
-            <Link to="/labs" style={{ padding: '12px 26px', background: 'transparent', color: '#EDEDF0', fontWeight: 700, fontSize: 13, borderRadius: 9, textDecoration: 'none', border: '1.5px solid rgba(255,255,255,0.18)' }}>Browse All Labs</Link>
+      {/* ── CTA ──────────────────────────────────────────────── */}
+      <section className="py-20 md:py-28 px-5 md:px-10">
+        <div className="max-w-screen-xl mx-auto">
+          <div className="rounded-2xl p-10 md:p-20 text-center relative overflow-hidden"
+            style={{ background: 'var(--surface-container-low)' }}>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] md:w-[500px] h-[200px] md:h-[300px] rounded-full blur-[120px] pointer-events-none"
+              style={{ background: 'var(--secondary)', opacity: dark ? 0.05 : 0.07 }} />
+            <div className="relative z-10 space-y-6 max-w-2xl mx-auto">
+              <motion.h2
+                variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
+                className="serif font-light tracking-tighter"
+                style={{ fontSize: 'clamp(2rem, 5vw, 4rem)', color: 'var(--primary)', lineHeight: 1.1 }}>
+                Ready to start your first experiment?
+              </motion.h2>
+              <p className="font-body leading-relaxed" style={{ color: bodyText(dark), fontSize: '1rem' }}>
+                Join students using ARISE to master science concepts through hands-on virtual experiments.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+                <Link to="/auth"
+                  className="metallic font-label font-bold tracking-widest uppercase px-8 md:px-10 py-4 rounded-md transition-all hover:scale-[0.98]"
+                  style={{ color: 'var(--on-primary)', fontSize: '0.8125rem' }}>
+                  Create Free Account
+                </Link>
+                <Link to="/labs"
+                  className="font-label font-bold tracking-widest uppercase px-8 md:px-10 py-4 rounded-md ghost-border transition-all hover:bg-[var(--surface-bright)]"
+                  style={{ color: 'var(--primary)', background: 'var(--surface-container-highest)', fontSize: '0.8125rem' }}>
+                  Browse All Labs
+                </Link>
+              </div>
+            </div>
           </div>
-        </motion.div>
+        </div>
       </section>
 
-      {/* FOOTER */}
-      <footer style={{ borderTop: `1px solid ${tk.navBorder}`, background: tk.navBg, padding: '24px' }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 22, height: 22, background: tk.headingText, borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={tk.pageBg} strokeWidth="2.5"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18"/></svg>
-            </div>
-            <span style={{ fontWeight: 800, fontSize: 13, color: tk.headingText }}>ARISE</span>
-            <span style={{ color: tk.mutedText, margin: '0 6px' }}>|</span>
-            <span style={{ fontSize: 12, color: tk.mutedText }}>Advanced Remote Interactive Science Environment</span>
+      {/* ── FOOTER ───────────────────────────────────────────── */}
+      <footer style={{ background: 'var(--surface-container-lowest)', borderTop: `1px solid ${sectionBorder(dark)}` }}>
+        <div className="max-w-screen-xl mx-auto px-5 md:px-10 py-10 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex flex-col gap-2 items-center md:items-start">
+            <span className="serif text-base font-light" style={{ color: 'var(--primary)' }}>Arise</span>
+            <span className="font-label text-[11px] tracking-[0.12em] uppercase text-center md:text-left" style={{ color: 'var(--secondary)' }}>
+              © 2026 ARISE. Advanced Remote Interactive Science Environment.
+            </span>
           </div>
-          <span style={{ fontSize: 12, color: tk.mutedText }}>© 2026 ARISE. All rights reserved.</span>
+          <div className="flex flex-wrap justify-center gap-6 md:gap-8">
+            {['Privacy Policy', 'Terms of Service', 'Laboratory Safety', 'Accessibility'].map(link => (
+              <a key={link} href="#"
+                className="font-label text-[11px] tracking-[0.12em] uppercase transition-colors duration-200"
+                style={{ color: mutedText(dark) }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--primary)')}
+                onMouseLeave={e => (e.currentTarget.style.color = mutedText(dark))}>
+                {link}
+              </a>
+            ))}
+          </div>
         </div>
       </footer>
+
     </div>
   );
 }
